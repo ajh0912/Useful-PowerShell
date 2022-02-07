@@ -1,9 +1,11 @@
-# AH v1.2
-# For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
+# AH v1.4
 param (
     # Default domains to search are defined here, use the -Domains parameter to override - or change the below line.
     [Parameter(ValueFromPipeline)][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid"),
-    [Parameter(ValueFromPipeline)][string]$UserSearch
+    # Default type of object to search is User, use -Type parameter to override
+    # TODO add "Group"
+    [Parameter(ValueFromPipeline)][ValidateSet("User", "Computer")][string]$Type = "User",
+    [Parameter(ValueFromPipeline)][string]$Search
 )
 
 function Test-ModulePresent {
@@ -40,32 +42,54 @@ function ConvertTo-ParentCanonical {
 function Search-AdObjects {
     param (
         [Parameter(Mandatory, ValueFromPipeline)][string[]]$Domains,
-        [Parameter(Mandatory, ValueFromPipeline)][string]$UserSearch
+        # TODO add "Group"
+        [Parameter(Mandatory, ValueFromPipeline)][ValidateSet("User", "Computer")][string]$Type,
+        [Parameter(Mandatory, ValueFromPipeline)][string]$Search
     )
     foreach ($domain in $Domains) {
-        $searchParameters = @{
-            Server     = $domain
-            LDAPFilter = "(|(anr=$UserSearch)(department=$UserSearch*))"
-            Properties = "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "CanonicalName", "EmailAddress", "LastLogonDate"
+        $baseSearchParameters = @{
+            Server = $domain
         }
-        $domainObjects = Get-AdUser @searchParameters
-        
+        switch ($Type) {
+            "User" {
+                $searchParameters = $baseSearchParameters + @{
+                    # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
+                    LDAPFilter = "(|(anr=$Search)(department=*$Search*)(description=*$Search*))"
+                    Properties = "CanonicalName", "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "EmailAddress", "LastLogonDate"
+                }
+                $domainObjects = Get-AdUser @searchParameters
+            }
+            "Computer" {
+                $searchParameters = $baseSearchParameters + @{
+                    LDAPFilter = "(|(anr=$Search)(description=*$Search*))"
+                    Properties = "CanonicalName", "Enabled", "Name", "Location", "IPv4Address", "OperatingSystem", "LastLogonDate"
+                }
+                $domainObjects = Get-AdComputer @searchParameters
+            }
+            # TODO
+            "Group" { Throw }
+        }
+           
         if ($($domainObjects | Measure-Object).Count -gt 0) {
-            Write-Host "Found items matching '$($UserSearch)' in $domain" -ForegroundColor Green
-
-            [PSCustomObject] @{
-                Enabled         = $domainObjects.Enabled
-                GivenName       = $domainObjects.GivenName
-                Surname         = $domainObjects.Surname
-                SamAccountName  = $domainObjects.SamAccountName
-                Department      = $domainObjects.Department
-                ParentCanonical = $domainObjects.CanonicalName | ConvertTo-ParentCanonical
-                EmailAddress    = $domainObjects.EmailAddress
-                LastLogonDate   = $domainObjects.LastLogonDate
+            Write-Host "Found $($Type)(s) matching '$($Search)' in $domain" -ForegroundColor Green
+            
+            switch ($Type) {
+                "User" {
+                    $domainObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
+                    Enabled, GivenName, Surname, SamAccountName, Department, EmailAddress, LastLogonDate
+                }
+                "Computer" {
+                    $domainObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
+                    Enabled, Name, Location, IPv4Address, OperatingSystem, LastLogonDate
+                }
+                # TODO
+                "Group" {
+                    Throw
+                }
             }
         }
         else {
-            Write-Host "No items matching '$($UserSearch)' in $domain" -ForegroundColor Gray
+            Write-Host "No $($Type)s matching '$($Search)' in $domain" -ForegroundColor Gray
         }
     }
 }
@@ -74,14 +98,14 @@ Test-ModulePresent -Name "ActiveDirectory" -Import $true
 
 Write-Host "Searching domains: $($Domains -join ', ')" -ForegroundColor Cyan
 
-# If the parameter -UserSearch is populated, just return the search result
-if ($UserSearch) {
-    Search-AdObjects -Domains $Domains -UserSearch $UserSearch | Format-Table -AutoSize
+# If the parameter -Search is populated, just return the search result
+if ($Search) {
+    Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
 }
 # Else prompt the user to type their search, loop indefinitely unless user breaks loop
 else {
     while ($true) {
-        $UserSearch = Read-Host "Enter a user search term, eg. Username, First Name, Last Name, Department. Press Ctrl+C to cancel"
-        Search-AdObjects -Domains $Domains -UserSearch $UserSearch | Format-Table -AutoSize
+        $Search = Read-Host "Enter a search term, eg. Name, Description, Department. Press Ctrl+C to cancel"
+        Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
     }
 }
