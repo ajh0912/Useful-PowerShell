@@ -1,4 +1,4 @@
-# AH v1.1
+# AH v1.2
 # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
 param (
     # Default domains to search are defined here, use the -Domains parameter to override - or change the below line.
@@ -7,12 +7,12 @@ param (
 
 function Test-ModulePresent {
     param (
-        [Parameter(Mandatory,ValueFromPipeline)][string[]]$Name,
+        [Parameter(Mandatory, ValueFromPipeline)][string[]]$Name,
         [Parameter(ValueFromPipeline)][boolean]$Import = $false
-        )
+    )
     if (Get-Module -Name $Name -ListAvailable) {
         Write-Verbose "Module $Name is present"
-        if ($Import){
+        if ($Import) {
             Write-Verbose "Importing module $Name"
             try {
                 Import-Module $Name
@@ -29,7 +29,7 @@ function Test-ModulePresent {
 
 function ConvertTo-ParentCanonical {
     param (
-    [Parameter(Mandatory,ValueFromPipeline)][string[]]$CanonicalName
+        [Parameter(Mandatory, ValueFromPipeline)][string[]]$CanonicalName
     )
     $CanonicalName | ForEach-Object {
         $($_.Substring(0, $($_).lastIndexOf('/')))
@@ -38,18 +38,31 @@ function ConvertTo-ParentCanonical {
 
 function Search-AdObjects {
     param (
-    [Parameter(Mandatory,ValueFromPipeline)][string[]]$Domains,
-    [Parameter(Mandatory,ValueFromPipeline)][string]$UserSearch
+        [Parameter(Mandatory, ValueFromPipeline)][string[]]$Domains,
+        [Parameter(Mandatory, ValueFromPipeline)][string]$UserSearch
     )
     foreach ($domain in $Domains) {
-        $domainObjects = Get-AdUser -Server $domain -LDAPFilter "(|(anr=$UserSearch)(department=$UserSearch*))" `
-        -Properties Enabled, GivenName, Surname, SamAccountName, Department, CanonicalName, EmailAddress, LastLogonDate |
-        Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
-        Enabled, GivenName, Surname, SamAccountName, Department, EmailAddress, LastLogonDate
+        $searchParameters = @{
+            Server     = $domain
+            LDAPFilter = "(|(anr=$UserSearch)(department=$UserSearch*))"
+            Properties = "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "CanonicalName", "EmailAddress", "LastLogonDate"
+        }
+        $domainObjects = Get-AdUser @searchParameters
+
+        $domainResults = [PSCustomObject] @{
+            Enabled         = $domainObjects.Enabled
+            GivenName       = $domainObjects.GivenName
+            Surname         = $domainObjects.Surname
+            SamAccountName  = $domainObjects.SamAccountName
+            Department      = $domainObjects.Department
+            ParentCanonical = $domainObjects.CanonicalName | ConvertTo-ParentCanonical
+            EmailAddress    = $domainObjects.EmailAddress
+            LastLogonDate   = $domainObjects.LastLogonDate
+        }
         
         if ($($domainObjects | Measure-Object).Count -gt 0) {
             Write-Host "Found items matching '$($UserSearch)' in $domain" -ForegroundColor Cyan
-            $domainObjects
+            $domainResults
         }
         else {
             Write-Host "No items matching '$($UserSearch)' in $domain" -ForegroundColor Red
