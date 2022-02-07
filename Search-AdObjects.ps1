@@ -2,7 +2,8 @@
 # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
 param (
     # Default domains to search are defined here, use the -Domains parameter to override - or change the below line.
-    [Parameter(ValueFromPipeline)][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid")
+    [Parameter(ValueFromPipeline)][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid"),
+    [Parameter(ValueFromPipeline)][string]$UserSearch
 )
 
 function Test-ModulePresent {
@@ -48,24 +49,23 @@ function Search-AdObjects {
             Properties = "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "CanonicalName", "EmailAddress", "LastLogonDate"
         }
         $domainObjects = Get-AdUser @searchParameters
-
-        $domainResults = [PSCustomObject] @{
-            Enabled         = $domainObjects.Enabled
-            GivenName       = $domainObjects.GivenName
-            Surname         = $domainObjects.Surname
-            SamAccountName  = $domainObjects.SamAccountName
-            Department      = $domainObjects.Department
-            ParentCanonical = $domainObjects.CanonicalName | ConvertTo-ParentCanonical
-            EmailAddress    = $domainObjects.EmailAddress
-            LastLogonDate   = $domainObjects.LastLogonDate
-        }
         
         if ($($domainObjects | Measure-Object).Count -gt 0) {
-            Write-Host "Found items matching '$($UserSearch)' in $domain" -ForegroundColor Cyan
-            $domainResults
+            Write-Host "Found items matching '$($UserSearch)' in $domain" -ForegroundColor Green
+
+            [PSCustomObject] @{
+                Enabled         = $domainObjects.Enabled
+                GivenName       = $domainObjects.GivenName
+                Surname         = $domainObjects.Surname
+                SamAccountName  = $domainObjects.SamAccountName
+                Department      = $domainObjects.Department
+                ParentCanonical = $domainObjects.CanonicalName | ConvertTo-ParentCanonical
+                EmailAddress    = $domainObjects.EmailAddress
+                LastLogonDate   = $domainObjects.LastLogonDate
+            }
         }
         else {
-            Write-Host "No items matching '$($UserSearch)' in $domain" -ForegroundColor Red
+            Write-Host "No items matching '$($UserSearch)' in $domain" -ForegroundColor Gray
         }
     }
 }
@@ -74,7 +74,14 @@ Test-ModulePresent -Name "ActiveDirectory" -Import $true
 
 Write-Host "Searching domains: $($Domains -join ', ')" -ForegroundColor Cyan
 
-while ($true) {
-    $UserSearch = Read-Host "Enter a user search term, eg. Username, First Name, Last Name, Department. Press Ctrl+C to cancel"
+# If the parameter -UserSearch is populated, just return the search result
+if ($UserSearch) {
     Search-AdObjects -Domains $Domains -UserSearch $UserSearch | Format-Table -AutoSize
+}
+# Else prompt the user to type their search, loop indefinitely unless user breaks loop
+else {
+    while ($true) {
+        $UserSearch = Read-Host "Enter a user search term, eg. Username, First Name, Last Name, Department. Press Ctrl+C to cancel"
+        Search-AdObjects -Domains $Domains -UserSearch $UserSearch | Format-Table -AutoSize
+    }
 }
