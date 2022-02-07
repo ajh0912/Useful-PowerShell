@@ -36,27 +36,32 @@ function ConvertTo-ParentCanonical {
     }
 }
 
-Test-ModulePresent -Name "ActiveDirectory" -Import $true
-
-Write-Host "Searching domains: $($Domains -join ', ')" -ForegroundColor Cyan
-
-while ($true) {
-    $userSearch = Read-Host "Enter a user search term, eg. Username, First Name, Last Name, Department. Press Ctrl+C to cancel"
-    $combinedResults = [System.Collections.ArrayList]@()
-    
+function Search-AdObjects {
+    param (
+    [Parameter(Mandatory,ValueFromPipeline)][string[]]$Domains,
+    [Parameter(Mandatory,ValueFromPipeline)][string]$UserSearch
+    )
     foreach ($domain in $Domains) {
-        $domainObjects = Get-AdUser -Server $domain -LDAPFilter "(|(anr=$userSearch)(department=$userSearch*))" `
+        $domainObjects = Get-AdUser -Server $domain -LDAPFilter "(|(anr=$UserSearch)(department=$UserSearch*))" `
         -Properties Enabled, GivenName, Surname, SamAccountName, Department, CanonicalName, EmailAddress, LastLogonDate |
         Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
         Enabled, GivenName, Surname, SamAccountName, Department, EmailAddress, LastLogonDate
         
         if ($($domainObjects | Measure-Object).Count -gt 0) {
-            Write-Host "Found items matching '$($userSearch)' in $domain" -ForegroundColor Cyan
+            Write-Host "Found items matching '$($UserSearch)' in $domain" -ForegroundColor Cyan
+            $domainObjects
         }
         else {
-            Write-Host "No items matching '$($userSearch)' in $domain" -ForegroundColor Red
+            Write-Host "No items matching '$($UserSearch)' in $domain" -ForegroundColor Red
         }
-        $combinedResults += $domainObjects
     }
-    $combinedResults | Format-Table -AutoSize
+}
+
+Test-ModulePresent -Name "ActiveDirectory" -Import $true
+
+Write-Host "Searching domains: $($Domains -join ', ')" -ForegroundColor Cyan
+
+while ($true) {
+    $UserSearch = Read-Host "Enter a user search term, eg. Username, First Name, Last Name, Department. Press Ctrl+C to cancel"
+    Search-AdObjects -Domains $Domains -UserSearch $UserSearch | Format-Table -AutoSize
 }
