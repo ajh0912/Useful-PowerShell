@@ -1,4 +1,4 @@
-# AH v1.4
+# AH v1.5
 param (
     # Default domains to search are defined here, use the -Domains parameter to override - or change the below line.
     [Parameter(ValueFromPipeline)][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid"),
@@ -55,14 +55,14 @@ function Search-AdObjects {
                 $searchParameters = $baseSearchParameters + @{
                     # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
                     LDAPFilter = "(|(anr=$Search)(department=*$Search*)(description=*$Search*))"
-                    Properties = "CanonicalName", "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "EmailAddress", "LastLogonDate"
+                    Properties = "CanonicalName", "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "EmailAddress", "LastLogonDate", "Description"
                 }
                 $domainObjects = Get-AdUser @searchParameters
             }
             "Computer" {
                 $searchParameters = $baseSearchParameters + @{
                     LDAPFilter = "(|(anr=$Search)(description=*$Search*))"
-                    Properties = "CanonicalName", "Enabled", "Name", "Location", "IPv4Address", "OperatingSystem", "LastLogonDate"
+                    Properties = "CanonicalName", "Enabled", "Name", "Location", "IPv4Address", "OperatingSystem", "LastLogonDate", "Description"
                 }
                 $domainObjects = Get-AdComputer @searchParameters
             }
@@ -76,11 +76,11 @@ function Search-AdObjects {
             switch ($Type) {
                 "User" {
                     $domainObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
-                    Enabled, GivenName, Surname, SamAccountName, Department, EmailAddress, LastLogonDate
+                    Enabled, GivenName, Surname, SamAccountName, Department, EmailAddress, LastLogonDate, Description
                 }
                 "Computer" {
                     $domainObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
-                    Enabled, Name, Location, IPv4Address, OperatingSystem, LastLogonDate
+                    Enabled, Name, Location, IPv4Address, OperatingSystem, LastLogonDate, Description
                 }
                 # TODO
                 "Group" {
