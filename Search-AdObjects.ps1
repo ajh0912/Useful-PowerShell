@@ -1,9 +1,11 @@
-# AH v1.8
 <#
 .SYNOPSIS
+
+v1.9
 Searches for Users or Computers across multiple Active Directory domains/forests.
 
 .DESCRIPTION
+
 For users, matches are returned based on an OR of: Ambiguous Name Resolution, Department, Description
 Searching with wildcards can cast a wider net in your search, for example *mysearch* (although a one-ended wildcard can also be used: *mysearch).
 An example of this being useful is a search for '*sales*' would also return those with a deparment of 'presales'.
@@ -21,7 +23,7 @@ Return objects directly from Get-AdUser or Get-AdComputer, rather than formattin
 Can only be used if 'Search' parameter is populated.
 
 .PARAMETER Domains
-Array of strings for domains to search for objects.
+One or more strings, specifying the domains to search.
 
 .PARAMETER Type
 Type of Active Directory object to search for.
@@ -30,14 +32,16 @@ Type of Active Directory object to search for.
 Term to search for in Active Directory, attributes being searched depend on the object type.
 
 .INPUTS
-None. You cannot pipe objects to this script.
+
+None. You cannot pipe objects to Search-AdObjects.ps1.
 
 .OUTPUTS
+
 Formatted table of the Active Directory object(s) found.
+If using 'PassThru' parameter, returns user or computer objects.
 
 .EXAMPLE
-# Specifying domains manually rather than the default defined within the script.
-# Default 'Type' is User, no need to specify that parameter if searching users.
+
 PS> .\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Search "bob"
 PS> .\Search-AdObjects.ps1 -Type User -Search "bob"
 PS> .\Search-AdObjects.ps1 -Search "bob"
@@ -46,9 +50,11 @@ ParentCanonical               Enabled GivenName Surname SamAccountName Departmen
 ---------------               ------- --------- ------- -------------- ---------- ------------              -------------       -----------
 ad1.example.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@example.invalid 01/01/2000 12:00:00 
 
-.EXAMPLE
-# Using default domains defined within the script.
+# Specifying domains manually rather than the default defined within the script.
 # Default 'Type' is User, no need to specify that parameter if searching users.
+
+.EXAMPLE
+
 PS> .\Search-AdObjects.ps1 -Search "*sales*"
 
 ParentCanonical               Enabled GivenName Surname SamAccountName Department EmailAddress               LastLogonDate       Description
@@ -57,17 +63,35 @@ ad1.example.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales    
 ad1.example.invalid/ORG/Users    True Jane      Baker   jane.baker     Presales   jane.baker@example.invalid 01/01/2000 12:00:00 
 ad1.example.invalid/ORG/Users    True John      Green   john.green     Marketing  john.green@example.invalid 01/01/2000 12:00:00 Interim sales
 
+# Using default domains defined within the script.
+# Default 'Type' is User, no need to specify that parameter if searching users.
+
 .EXAMPLE
-# Specifying domains manually rather than the default defined within the script.
-# 'Type' needs to be specified as Computer.
-# Using wildcards to return
+
 PS> .\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Type Computer -Search "*fileserver*"
 
 ParentCanonical                   Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
 ---------------                   ------- ---- -------- ----------- ---------------              -------------       -----------
 ad1.example.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA Fileserver
 
+# Specifying domains manually rather than the default defined within the script.
+# 'Type' needs to be specified as Computer.
+# Using wildcards to return
+
+.EXAMPLE
+
+PS> .\Search-AdObjects.ps1 -PassThru -Search "*sales*" | Out-GridView
+
+ParentCanonical                   Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
+---------------                   ------- ---- -------- ----------- ---------------              -------------       -----------
+ad1.example.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA Fileserver
+
+# Using default domains defined within the script.
+# Default 'Type' is User, no need to specify that parameter if searching users.
+# Using 'PassThru' to allow passing the user object(s) down the pipeline, in this case to Out-GridView
+# 'Search' must be populated if using 'PassThru'
 #>
+
 param (
     [Parameter()][switch]$PassThru,
     # Default domains to search are defined here, use the 'Domains' parameter to override - or change the below line
