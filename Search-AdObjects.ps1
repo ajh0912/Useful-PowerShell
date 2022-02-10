@@ -1,8 +1,73 @@
-# AH v1.5
+# AH v1.7
+<#
+.SYNOPSIS
+Searches for Users or Computers across multiple Active Directory domains/forests.
+
+.DESCRIPTION
+For users, matches are returned based on an OR of: Ambigous Name Resolution, Department, Description
+Searching with wildcards can cast a wider net in your search, for example *mysearch* (although a one-ended wildcard can also be used: *mysearch).
+An example of this being useful is a search for '*sales*' would also return those with a deparment of 'presales'.
+This very wide-net method of matching can also be a detriment, a search for '*ted*' might also return any users with 'converted' or 'created' in their description.
+
+For computers, matches are returned based on an OR of: Ambigous Name Resolution, Description
+See above about wildcards.
+
+Paramters can be optionally specified at execution.
+If the 'Search' parameter is not set, the user will be prompted to enter a search term interactively.
+After results are returned this way, the user is prompted for another search indefinitely until the script is exited.
+
+.PARAMETER Domains
+Array of strings for domains to search for objects.
+
+.PARAMETER Type
+Type of Active Directory object to search for.
+
+.PARAMETER Search
+Term to search for in Active Directory, attributes being searched depend on the object type.
+
+.INPUTS
+All parameters can be piped in, as long as they are named elements.
+
+.OUTPUTS
+Formatted table of the Active Directory object(s) found.
+
+.EXAMPLE
+# Specifying domains manually rather than the default defined within the script.
+# Default 'Type' is User, no need to specify that parameter if searching users.
+PS> .\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Search "bob"
+PS> .\Search-AdObjects.ps1 -Type User -Search "bob"
+PS> .\Search-AdObjects.ps1 -Search "bob"
+
+ParentCanonical               Enabled GivenName Surname SamAccountName Department EmailAddress              LastLogonDate       Description
+---------------               ------- --------- ------- -------------- ---------- ------------              -------------       -----------
+ad1.example.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@example.invalid 01/01/2000 12:00:00 
+
+.EXAMPLE
+# Using default domains defined within the script.
+# Default 'Type' is User, no need to specify that parameter if searching users.
+PS> .\Search-AdObjects.ps1 -Search "*sales*"
+
+ParentCanonical               Enabled GivenName Surname SamAccountName Department EmailAddress               LastLogonDate       Description
+---------------               ------- --------- ------- -------------- ---------- ------------               -------------       -----------
+ad1.example.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@example.invalid  01/01/2000 12:00:00 
+ad1.example.invalid/ORG/Users    True Jane      Baker   jane.baker     Presales   jane.baker@example.invalid 01/01/2000 12:00:00 
+ad1.example.invalid/ORG/Users    True John      Green   john.green     Marketing  john.green@example.invalid 01/01/2000 12:00:00 Interim sales
+
+.EXAMPLE
+# Specifying domains manually rather than the default defined within the script.
+# 'Type' needs to be specified as Computer.
+# Using wildcards to return
+PS> .\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Type Computer -Search "*fileserver*"
+
+ParentCanonical                   Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
+---------------                   ------- ---- -------- ----------- ---------------              -------------       -----------
+ad1.example.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA Fileserver
+
+#>
 param (
-    # Default domains to search are defined here, use the -Domains parameter to override - or change the below line.
+    # Default domains to search are defined here, use the 'Domains' parameter to override - or change the below line.
     [Parameter(ValueFromPipeline)][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid"),
-    # Default type of object to search is User, use -Type parameter to override
+    # Default type of object to search is User, use 'Type' parameter to override
     # TODO add "Group"
     [Parameter(ValueFromPipeline)][ValidateSet("User", "Computer")][string]$Type = "User",
     [Parameter(ValueFromPipeline)][string]$Search
@@ -47,29 +112,30 @@ function Search-AdObjects {
         [Parameter(Mandatory, ValueFromPipeline)][string]$Search
     )
     foreach ($domain in $Domains) {
-        $baseSearchParameters = @{
-            Server = $domain
-        }
         switch ($Type) {
             "User" {
-                $searchParameters = $baseSearchParameters + @{
+                $searchParameters = @{
+                    Server     = $domain
                     # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
-                    LDAPFilter = "(|(anr=$Search)(department=*$Search*)(description=*$Search*))"
+                    LDAPFilter = "(|(anr=$Search)(department=$Search)(description=$Search))"
                     Properties = "CanonicalName", "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "EmailAddress", "LastLogonDate", "Description"
                 }
                 $domainObjects = Get-AdUser @searchParameters
             }
             "Computer" {
-                $searchParameters = $baseSearchParameters + @{
-                    LDAPFilter = "(|(anr=$Search)(description=*$Search*))"
+                $searchParameters = @{
+                    Server     = $domain
+                    # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
+                    LDAPFilter = "(|(anr=$Search)(description=$Search))"
                     Properties = "CanonicalName", "Enabled", "Name", "Location", "IPv4Address", "OperatingSystem", "LastLogonDate", "Description"
                 }
                 $domainObjects = Get-AdComputer @searchParameters
             }
             # TODO
-            "Group" { Throw }
+            "Group" { 
+                Throw 
+            }
         }
-           
         if ($($domainObjects | Measure-Object).Count -gt 0) {
             Write-Host "Found $($Type)(s) matching '$($Search)' in $domain" -ForegroundColor Green
             
@@ -98,7 +164,7 @@ Test-ModulePresent -Name "ActiveDirectory" -Import $true
 
 Write-Host "Searching domains: $($Domains -join ', ')" -ForegroundColor Cyan
 
-# If the parameter -Search is populated, just return the search result
+# If the parameter 'Search' is populated, just return the search result
 if ($Search) {
     Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
 }
