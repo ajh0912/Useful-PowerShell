@@ -1,20 +1,24 @@
-# AH v1.7
+# AH v1.8
 <#
 .SYNOPSIS
 Searches for Users or Computers across multiple Active Directory domains/forests.
 
 .DESCRIPTION
-For users, matches are returned based on an OR of: Ambigous Name Resolution, Department, Description
+For users, matches are returned based on an OR of: Ambiguous Name Resolution, Department, Description
 Searching with wildcards can cast a wider net in your search, for example *mysearch* (although a one-ended wildcard can also be used: *mysearch).
 An example of this being useful is a search for '*sales*' would also return those with a deparment of 'presales'.
 This very wide-net method of matching can also be a detriment, a search for '*ted*' might also return any users with 'converted' or 'created' in their description.
 
-For computers, matches are returned based on an OR of: Ambigous Name Resolution, Description
+For computers, matches are returned based on an OR of: Ambiguous Name Resolution, Description
 See above about wildcards.
 
 Paramters can be optionally specified at execution.
 If the 'Search' parameter is not set, the user will be prompted to enter a search term interactively.
 After results are returned this way, the user is prompted for another search indefinitely until the script is exited.
+
+.PARAMETER PassThru
+Return objects directly from Get-AdUser or Get-AdComputer, rather than formatting to a table.
+Can only be used if 'Search' parameter is populated.
 
 .PARAMETER Domains
 Array of strings for domains to search for objects.
@@ -26,7 +30,7 @@ Type of Active Directory object to search for.
 Term to search for in Active Directory, attributes being searched depend on the object type.
 
 .INPUTS
-All parameters can be piped in, as long as they are named elements.
+None. You cannot pipe objects to this script.
 
 .OUTPUTS
 Formatted table of the Active Directory object(s) found.
@@ -65,12 +69,13 @@ ad1.example.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Serv
 
 #>
 param (
-    # Default domains to search are defined here, use the 'Domains' parameter to override - or change the below line.
-    [Parameter(ValueFromPipeline)][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid"),
+    [Parameter()][switch]$PassThru,
+    # Default domains to search are defined here, use the 'Domains' parameter to override - or change the below line
+    [Parameter()][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid"),
     # Default type of object to search is User, use 'Type' parameter to override
     # TODO add "Group"
-    [Parameter(ValueFromPipeline)][ValidateSet("User", "Computer")][string]$Type = "User",
-    [Parameter(ValueFromPipeline)][string]$Search
+    [Parameter()][ValidateSet("User", "Computer")][string]$Type = "User",
+    [Parameter()][string]$Search
 )
 
 function Test-ModulePresent {
@@ -166,10 +171,20 @@ Write-Host "Searching domains: $($Domains -join ', ')" -ForegroundColor Cyan
 
 # If the parameter 'Search' is populated, just return the search result
 if ($Search) {
-    Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
+    # If 'PassThru' is present, return the results as an object
+    if ($PassThru) {
+        Search-AdObjects -Domains $Domains -Type $Type -Search $Search
+    }
+    # If 'PassThru' is absent, return the results as a formatted table
+    else {
+        Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
+    }
 }
 # Else prompt the user to type their search, loop indefinitely unless user breaks loop
 else {
+    if ($PassThru) {
+        Throw "'Search' parameter must be defined if using 'PassThru'"
+    }
     while ($true) {
         $Search = Read-Host "Enter a search term, eg. Name, Description, Department. Press Ctrl+C to cancel"
         Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
