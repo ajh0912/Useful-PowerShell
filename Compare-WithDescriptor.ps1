@@ -1,9 +1,11 @@
-# AH v0.1
 <#
 .SYNOPSIS
+
+v0.2
 Makes the output of Compare-Object easier to read.
 
 .DESCRIPTION
+
 Takes the objects to compare and a name for each.
 Turns the Compare-Object 'SideIndicator' into a descriptor.
 Outputs the modified Compare-Object result.
@@ -25,9 +27,11 @@ Property for Compare-Object to compare between the objects.
 Defaults to 'Name' if not specified.
 
 .INPUTS
-All parameters can be piped in, as long as they are named elements.
+
+None. You cannot pipe objects to Compare-WithDescriptor.ps1.
 
 .OUTPUTS
+
 PSCustomObject. Modified from the output of Compare-Object.
 
 .EXAMPLE
@@ -40,11 +44,11 @@ pc106 Exists only in RMM
 #>
 
 param (
-    [Parameter(Mandatory, ValueFromPipeline)][string]$ReferenceName,
-    [Parameter(Mandatory, ValueFromPipeline)][object]$ReferenceObject,
-    [Parameter(Mandatory, ValueFromPipeline)][string]$DifferenceName,
-    [Parameter(Mandatory, ValueFromPipeline)][object]$DifferenceObject,
-    [Parameter(Mandatory, ValueFromPipeline)][string]$Property = "Name"
+    [Parameter(Mandatory)][string]$ReferenceName,
+    [Parameter(Mandatory)][object]$ReferenceObject,
+    [Parameter(Mandatory)][string]$DifferenceName,
+    [Parameter(Mandatory)][object]$DifferenceObject,
+    [Parameter(Mandatory)][string]$Property = "Name"
 )
 
 function Get-SideDescriptor {
