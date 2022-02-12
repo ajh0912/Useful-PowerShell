@@ -1,11 +1,9 @@
 <#
 .SYNOPSIS
-
 v1.9
 Searches for Users or Computers across multiple Active Directory domains/forests.
 
 .DESCRIPTION
-
 For users, matches are returned based on an OR of: Ambiguous Name Resolution, Department, Description
 Searching with wildcards can cast a wider net in your search, for example *mysearch* (although a one-ended wildcard can also be used: *mysearch).
 An example of this being useful is a search for '*sales*' would also return those with a deparment of 'presales'.
@@ -32,19 +30,14 @@ Type of Active Directory object to search for.
 Term to search for in Active Directory, attributes being searched depend on the object type.
 
 .INPUTS
-
 None. You cannot pipe objects to Search-AdObjects.ps1.
 
 .OUTPUTS
-
 Formatted table of the Active Directory object(s) found.
 If using 'PassThru' parameter, returns user or computer objects.
 
 .EXAMPLE
-
-PS> .\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Search "bob"
-PS> .\Search-AdObjects.ps1 -Type User -Search "bob"
-PS> .\Search-AdObjects.ps1 -Search "bob"
+.\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Search "bob"
 
 ParentCanonical               Enabled GivenName Surname SamAccountName Department EmailAddress              LastLogonDate       Description
 ---------------               ------- --------- ------- -------------- ---------- ------------              -------------       -----------
@@ -54,8 +47,7 @@ ad1.example.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales    
 # Default 'Type' is User, no need to specify that parameter if searching users.
 
 .EXAMPLE
-
-PS> .\Search-AdObjects.ps1 -Search "*sales*"
+.\Search-AdObjects.ps1 -Search "*sales*"
 
 ParentCanonical               Enabled GivenName Surname SamAccountName Department EmailAddress               LastLogonDate       Description
 ---------------               ------- --------- ------- -------------- ---------- ------------               -------------       -----------
@@ -67,8 +59,7 @@ ad1.example.invalid/ORG/Users    True John      Green   john.green     Marketing
 # Default 'Type' is User, no need to specify that parameter if searching users.
 
 .EXAMPLE
-
-PS> .\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Type Computer -Search "*fileserver*"
+.\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Type Computer -Search "*fileserver*"
 
 ParentCanonical                   Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
 ---------------                   ------- ---- -------- ----------- ---------------              -------------       -----------
@@ -79,8 +70,7 @@ ad1.example.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Serv
 # Using wildcards to return
 
 .EXAMPLE
-
-PS> .\Search-AdObjects.ps1 -PassThru -Search "*sales*" | Out-GridView
+.\Search-AdObjects.ps1 -PassThru -Search "*sales*" | Out-GridView
 
 ParentCanonical                   Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
 ---------------                   ------- ---- -------- ----------- ---------------              -------------       -----------

@@ -1,11 +1,9 @@
 <#
 .SYNOPSIS
-
 v0.2
 Makes the output of Compare-Object easier to read.
 
 .DESCRIPTION
-
 Takes the objects to compare and a name for each.
 Turns the Compare-Object 'SideIndicator' into a descriptor.
 Outputs the modified Compare-Object result.
@@ -27,15 +25,13 @@ Property for Compare-Object to compare between the objects.
 Defaults to 'Name' if not specified.
 
 .INPUTS
-
 None. You cannot pipe objects to Compare-WithDescriptor.ps1.
 
 .OUTPUTS
-
 PSCustomObject. Modified from the output of Compare-Object.
 
 .EXAMPLE
-PS> .\Compare-WithDescriptor.ps1 -ReferenceName "AD" -ReferenceObject (Import-Csv "ad.csv") -DifferenceName "RMM" -DifferenceObject (Import-Csv "rmm.csv") -Property Name
+.\Compare-WithDescriptor.ps1 -ReferenceName "AD" -ReferenceObject (Import-Csv "ad.csv") -DifferenceName "RMM" -DifferenceObject (Import-Csv "rmm.csv") -Property Name
 
 Name  Comparison Status
 ----  -----------------
