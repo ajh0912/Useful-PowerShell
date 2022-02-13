@@ -37,55 +37,57 @@ Formatted table of the Active Directory object(s) found.
 If using 'PassThru' parameter, returns user or computer objects.
 
 .EXAMPLE
-.\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Search "bob"
+.\Search-AdObjects.ps1 -Domains ad1.invalid, ad2.invalid -Search bob
 
-ParentCanonical               Enabled GivenName Surname SamAccountName Department EmailAddress              LastLogonDate       Description
----------------               ------- --------- ------- -------------- ---------- ------------              -------------       -----------
-ad1.example.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@example.invalid 01/01/2000 12:00:00 
+ParentCanonical       Enabled GivenName Surname SamAccountName Department EmailAddress          LastLogonDate       Description
+---------------       ------- --------- ------- -------------- ---------- ------------          -------------       -----------
+ad1.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@ad1.invalid 01/01/2000 12:00:00 
 
 # Specifying domains manually rather than the default defined within the script.
 # Default 'Type' is User, no need to specify that parameter if searching users.
 
 .EXAMPLE
-.\Search-AdObjects.ps1 -Search "*sales*"
+.\Search-AdObjects.ps1 -Search *sales*
 
-ParentCanonical               Enabled GivenName Surname SamAccountName Department EmailAddress               LastLogonDate       Description
----------------               ------- --------- ------- -------------- ---------- ------------               -------------       -----------
-ad1.example.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@example.invalid  01/01/2000 12:00:00 
-ad1.example.invalid/ORG/Users    True Jane      Baker   jane.baker     Presales   jane.baker@example.invalid 01/01/2000 12:00:00 
-ad1.example.invalid/ORG/Users    True John      Green   john.green     Marketing  john.green@example.invalid 01/01/2000 12:00:00 Interim sales
+ParentCanonical       Enabled GivenName Surname SamAccountName Department EmailAddress           LastLogonDate       Description
+---------------       ------- --------- ------- -------------- ---------- ------------           -------------       -----------
+ad1.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@ad1.invalid  01/01/2000 12:00:00 
+ad1.invalid/ORG/Users    True Jane      Baker   jane.baker     Presales   jane.baker@ad1.invalid 01/01/2000 12:00:00 
+ad1.invalid/ORG/Users    True John      Green   john.green     Marketing  john.green@ad1.invalid 01/01/2000 12:00:00 Interim sales
 
 # Using default domains defined within the script.
 # Default 'Type' is User, no need to specify that parameter if searching users.
+# Using wildcards before and after the search term to make the query less specifc.
 
 .EXAMPLE
-.\Search-AdObjects.ps1 -Domains "ad1.example.invalid", "ad2.example.invalid" -Type Computer -Search "*fileserver*"
+.\Search-AdObjects.ps1 -Domains ad1.invalid, ad2.invalid -Type Computer -Search "*file server*""
 
-ParentCanonical                   Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
----------------                   ------- ---- -------- ----------- ---------------              -------------       -----------
-ad1.example.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA Fileserver
+ParentCanonical           Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
+---------------           ------- ---- -------- ----------- ---------------              -------------       -----------
+ad1.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA File Server
 
 # Specifying domains manually rather than the default defined within the script.
 # 'Type' needs to be specified as Computer.
-# Using wildcards to return
+# Using quotation marks around any values with spaces.
+# Using wildcards before and after the search term to make the query less specifc.
+
 
 .EXAMPLE
-.\Search-AdObjects.ps1 -PassThru -Search "*sales*" | Out-GridView
+.\Search-AdObjects.ps1 -PassThru -Search *sales* | Out-GridView
 
-ParentCanonical                   Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
----------------                   ------- ---- -------- ----------- ---------------              -------------       -----------
-ad1.example.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA Fileserver
+<PowerShell GridView GUI>
 
 # Using default domains defined within the script.
 # Default 'Type' is User, no need to specify that parameter if searching users.
 # Using 'PassThru' to allow passing the user object(s) down the pipeline, in this case to Out-GridView
 # 'Search' must be populated if using 'PassThru'
+# Using wildcards before and after the search term to make the query less specifc.
 #>
 
 param (
     [Parameter()][switch]$PassThru,
     # Default domains to search are defined here, use the 'Domains' parameter to override - or change the below line
-    [Parameter()][string[]]$Domains = ("ad1.example.invalid", "ad2.example.invalid"),
+    [Parameter()][string[]]$Domains = ("ad1.invalid", "ad2.invalid"),
     # Default type of object to search is User, use 'Type' parameter to override
     # TODO add "Group"
     [Parameter()][ValidateSet("User", "Computer")][string]$Type = "User",

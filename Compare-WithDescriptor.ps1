@@ -31,7 +31,7 @@ None. You cannot pipe objects to Compare-WithDescriptor.ps1.
 PSCustomObject. Modified from the output of Compare-Object.
 
 .EXAMPLE
-.\Compare-WithDescriptor.ps1 -ReferenceName "AD" -ReferenceObject (Import-Csv "ad.csv") -DifferenceName "RMM" -DifferenceObject (Import-Csv "rmm.csv") -Property Name
+.\Compare-WithDescriptor.ps1 -ReferenceName AD -ReferenceObject (Import-Csv ad.csv) -DifferenceName RMM -DifferenceObject (Import-Csv rmm.csv) -Property Name
 
 Name  Comparison Status
 ----  -----------------
