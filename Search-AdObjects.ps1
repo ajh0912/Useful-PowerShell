@@ -20,8 +20,9 @@ After results are returned this way, the user is prompted for another search ind
 Return objects directly from Get-AdUser or Get-AdComputer, rather than formatting to a table.
 Can only be used if 'Search' parameter is populated.
 
-.PARAMETER Domains
-One or more strings, specifying the domains to search.
+.PARAMETER Servers
+One or more strings, specifying the servers to query.
+A specific domain contoller can be used, or if the domain FQDN entered then one domain controller in the domain will be queried.
 
 .PARAMETER Type
 Type of Active Directory object to search for.
@@ -37,11 +38,11 @@ Formatted table of the Active Directory object(s) found.
 If using 'PassThru' parameter, returns user or computer objects.
 
 .EXAMPLE
-.\Search-AdObjects.ps1 -Domains ad1.invalid, ad2.invalid -Search bob
+.\Search-AdObjects.ps1 -Domains ad1.example, ad2.example -Search bob
 
 ParentCanonical       Enabled GivenName Surname SamAccountName Department EmailAddress          LastLogonDate       Description
 ---------------       ------- --------- ------- -------------- ---------- ------------          -------------       -----------
-ad1.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@ad1.invalid 01/01/2000 12:00:00 
+ad1.example/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@ad1.example 01/01/2000 12:00:00 
 
 # Specifying domains manually rather than the default defined within the script.
 # Default 'Type' is User, no need to specify that parameter if searching users.
@@ -51,26 +52,25 @@ ad1.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.sm
 
 ParentCanonical       Enabled GivenName Surname SamAccountName Department EmailAddress           LastLogonDate       Description
 ---------------       ------- --------- ------- -------------- ---------- ------------           -------------       -----------
-ad1.invalid/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@ad1.invalid  01/01/2000 12:00:00 
-ad1.invalid/ORG/Users    True Jane      Baker   jane.baker     Presales   jane.baker@ad1.invalid 01/01/2000 12:00:00 
-ad1.invalid/ORG/Users    True John      Green   john.green     Marketing  john.green@ad1.invalid 01/01/2000 12:00:00 Interim sales
+ad1.example/ORG/Users    True Bob       Smith   bob.smith      Sales      bob.smith@ad1.example  01/01/2000 12:00:00 
+ad1.example/ORG/Users    True Jane      Baker   jane.baker     Presales   jane.baker@ad1.example 01/01/2000 12:00:00 
+ad1.example/ORG/Users    True John      Green   john.green     Marketing  john.green@ad1.example 01/01/2000 12:00:00 Interim sales
 
 # Using default domains defined within the script.
 # Default 'Type' is User, no need to specify that parameter if searching users.
 # Using wildcards before and after the search term to make the query less specifc.
 
 .EXAMPLE
-.\Search-AdObjects.ps1 -Domains ad1.invalid, ad2.invalid -Type Computer -Search "*file server*""
+.\Search-AdObjects.ps1 -Servers ad1.example, ad2.example -Type Computer -Search "*file server*""
 
 ParentCanonical           Enabled Name Location IPv4Address OperatingSystem              LastLogonDate       Description
 ---------------           ------- ---- -------- ----------- ---------------              -------------       -----------
-ad1.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA File Server
+ad1.example/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 Standard 01/01/2000 12:00:00 ProjectA File Server
 
 # Specifying domains manually rather than the default defined within the script.
 # 'Type' needs to be specified as Computer.
 # Using quotation marks around any values with spaces.
 # Using wildcards before and after the search term to make the query less specifc.
-
 
 .EXAMPLE
 .\Search-AdObjects.ps1 -PassThru -Search *sales* | Out-GridView
@@ -85,13 +85,13 @@ ad1.invalid/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 
 #>
 
 param (
-    [Parameter()][switch]$PassThru,
     # Default domains to search are defined here, use the 'Domains' parameter to override - or change the below line
-    [Parameter()][string[]]$Domains = ("ad1.invalid", "ad2.invalid"),
+    [Parameter()][Alias("Domains")][ValidateNotNullOrEmpty()][string[]]$Servers = ("ad1.example", "ad2.example"),
     # Default type of object to search is User, use 'Type' parameter to override
     # TODO add "Group"
     [Parameter()][ValidateSet("User", "Computer")][string]$Type = "User",
-    [Parameter()][string]$Search
+    [Parameter()][ValidateNotNullOrEmpty()][string]$Search,
+    [Parameter()][switch]$PassThru
 )
 
 function Test-ModulePresent {
@@ -127,46 +127,46 @@ function ConvertTo-ParentCanonical {
 
 function Search-AdObjects {
     param (
-        [Parameter(Mandatory, ValueFromPipeline)][string[]]$Domains,
+        [Parameter(Mandatory, ValueFromPipeline)][string[]]$Servers,
         # TODO add "Group"
         [Parameter(Mandatory, ValueFromPipeline)][ValidateSet("User", "Computer")][string]$Type,
         [Parameter(Mandatory, ValueFromPipeline)][string]$Search
     )
-    foreach ($domain in $Domains) {
+    foreach ($server in $Servers) {
         switch ($Type) {
             "User" {
                 $searchParameters = @{
-                    Server     = $domain
+                    Server     = $server
                     # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
                     LDAPFilter = "(|(anr=$Search)(department=$Search)(description=$Search))"
                     Properties = "CanonicalName", "Enabled", "GivenName", "Surname", "SamAccountName", "Department", "EmailAddress", "LastLogonDate", "Description"
                 }
-                $domainObjects = Get-AdUser @searchParameters
+                $serverObjects = Get-AdUser @searchParameters
             }
             "Computer" {
                 $searchParameters = @{
-                    Server     = $domain
+                    Server     = $server
                     # For info on Active Directory's ANR feature see https://social.technet.microsoft.com/wiki/contents/articles/22653.active-directory-ambiguous-name-resolution.aspx
                     LDAPFilter = "(|(anr=$Search)(description=$Search))"
                     Properties = "CanonicalName", "Enabled", "Name", "Location", "IPv4Address", "OperatingSystem", "LastLogonDate", "Description"
                 }
-                $domainObjects = Get-AdComputer @searchParameters
+                $serverObjects = Get-AdComputer @searchParameters
             }
             # TODO
             "Group" { 
                 Throw 
             }
         }
-        if ($($domainObjects | Measure-Object).Count -gt 0) {
-            Write-Host "Found $($Type)(s) matching '$($Search)' in $domain" -ForegroundColor Green
+        if ($($serverObjects | Measure-Object).Count -gt 0) {
+            Write-Host "Found $($Type)(s) matching '$($Search)' in $server" -ForegroundColor Green
             
             switch ($Type) {
                 "User" {
-                    $domainObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
+                    $serverObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
                     Enabled, GivenName, Surname, SamAccountName, Department, EmailAddress, LastLogonDate, Description
                 }
                 "Computer" {
-                    $domainObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
+                    $serverObjects | Select-Object @{ Name = "ParentCanonical"; Expression = { $_.CanonicalName | ConvertTo-ParentCanonical } },
                     Enabled, Name, Location, IPv4Address, OperatingSystem, LastLogonDate, Description
                 }
                 # TODO
@@ -176,24 +176,24 @@ function Search-AdObjects {
             }
         }
         else {
-            Write-Host "No $($Type)s matching '$($Search)' in $domain" -ForegroundColor Gray
+            Write-Host "No $($Type)s matching '$($Search)' in $server" -ForegroundColor Gray
         }
     }
 }
 
 Test-ModulePresent -Name "ActiveDirectory" -Import $true
 
-Write-Host "Searching domains: $($Domains -join ', ')" -ForegroundColor Cyan
+Write-Host "Searching domains: $($Servers -join ', ')" -ForegroundColor Cyan
 
 # If the parameter 'Search' is populated, just return the search result
 if ($Search) {
     # If 'PassThru' is present, return the results as an object
     if ($PassThru) {
-        Search-AdObjects -Domains $Domains -Type $Type -Search $Search
+        Search-AdObjects -Servers $Servers -Type $Type -Search $Search
     }
     # If 'PassThru' is absent, return the results as a formatted table
     else {
-        Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
+        Search-AdObjects -Servers $Servers -Type $Type -Search $Search | Format-Table -AutoSize
     }
 }
 # Else prompt the user to type their search, loop indefinitely unless user breaks loop
@@ -203,6 +203,6 @@ else {
     }
     while ($true) {
         $Search = Read-Host "Enter a search term, eg. Name, Description, Department. Press Ctrl+C to cancel"
-        Search-AdObjects -Domains $Domains -Type $Type -Search $Search | Format-Table -AutoSize
+        Search-AdObjects -Servers $Servers -Type $Type -Search $Search | Format-Table -AutoSize
     }
 }

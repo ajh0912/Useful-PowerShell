@@ -17,8 +17,9 @@ Check these values against the Microsoft Documentation:
 # Exchange Server 2016: https://docs.microsoft.com/en-us/exchange/plan-and-deploy/prepare-ad-and-domains?view=exchserver-2016#exchange-2016-active-directory-versions
 # Exchange Server 2019: https://docs.microsoft.com/en-us/exchange/plan-and-deploy/prepare-ad-and-domains?view=exchserver-2019#exchange-2019-active-directory-versions
 
-.PARAMETER Domains
-One or more strings, specifying the domains to query.
+.PARAMETER Servers
+One or more strings, specifying the servers to query.
+A specific domain contoller can be used, or if the domain FQDN entered then one domain controller in the domain will be queried.
 
 .INPUTS
 None. You cannot pipe objects to Get-AdExchangeVersion.ps1
@@ -27,37 +28,50 @@ None. You cannot pipe objects to Get-AdExchangeVersion.ps1
 PSCustomObject of the values from Active Directory, for each domain queried.
 
 .EXAMPLE
-.\Get-AdExchangeVersion.ps1 -Domains ad1.invalid, ad2.invalid
+.\Get-AdExchangeVersion.ps1 -Servers ad1.example, ad2.example
 
 Domain      rangeUpper objectVersion (Default) objectVersion (Configuration)
 ------      ---------- ----------------------- -----------------------------
-ad1.invalid      15334                   13242                         16222
-ad2.invalid      17003                   13242                         16759
+ad1.example      15334                   13242                         16222
+ad2.example      17003                   13242                         16759
 
 .EXAMPLE
-.\Get-AdExchangeVersion.ps1 -Domains ad1.invalid, ad2.invalid | Export-Csv -NoTypeInformation -Path "$(Get-Date -f yyyy-MM-dd-HHmm)-AdExchangeVersions.csv"
+.\Get-AdExchangeVersion.ps1 -Servers dc1.ad1.example, dc2.ad1.example
+
+Domain          rangeUpper objectVersion (Default) objectVersion (Configuration)
+------          ---------- ----------------------- -----------------------------
+dc1.ad1.example      15334                   13242                         16222
+dc2.ad2.example      15334                   13242                         16222
+
+# Querying two domain controllers in the same domain - the values returned should be identical.
+# If they are not the same, then there is a domain controller replication problem.
+
+.EXAMPLE
+.\Get-AdExchangeVersion.ps1 -Servers ad1.example, ad2.example | Export-Csv -NoTypeInformation -Path "$(Get-Date -f yyyy-MM-dd-HHmm)-AdExchangeVersions.csv"
 
 # '2000-01-01-1200-AdExchangeVersions.csv' file created in current directory
 #>
+
 param (
-    # Default domains to search are defined here
-    [Parameter()][string[]]$Domains = $env:USERDNSDOMAIN
+    # Default servers / domains to search are defined here
+    [Parameter()][Alias("Domain")][ValidateNotNullOrEmpty()][string[]]$Servers = $env:USERDNSDOMAIN
 )
-foreach ($domain in $domains) {
-    $AdRootDse = Get-ADRootDSE -Server $domain
+
+foreach ($server in $Servers) {
+    $AdRootDse = Get-ADRootDSE -Server $server
     
-    Write-Verbose "Querying $domain for 'rangeUpper'"
-    $rangeUpper = Get-ADObject -Server $domain -Filter 'name -eq "ms-Exch-Schema-Version-Pt"' -SearchBase $AdRootDse.schemaNamingContext -Properties rangeUpper
+    Write-Verbose "Querying $server for 'rangeUpper'"
+    $rangeUpper = Get-ADObject -Server $server -Filter 'name -eq "ms-Exch-Schema-Version-Pt"' -SearchBase $AdRootDse.schemaNamingContext -Properties rangeUpper
     
-    Write-Verbose "Querying $domain for 'objectVersion (Default)'"
-    $objectVersionDefault = Get-ADObject -Server $domain -Filter 'name -eq "Microsoft Exchange System Objects"' -Properties objectVersion
+    Write-Verbose "Querying $server for 'objectVersion (Default)'"
+    $objectVersionDefault = Get-ADObject -Server $server -Filter 'name -eq "Microsoft Exchange System Objects"' -Properties objectVersion
     
     $configSearchBase = "CN=Microsoft Exchange,CN=Services", $AdRootDse.configurationNamingContext -join ','
-    Write-Verbose "Querying $domain for 'objectVersion (Configuration)'"
-    $objectVersionConfig = Get-ADObject -Server $domain -LDAPFilter '(objectClass=msExchOrganizationContainer)' -SearchBase $configSearchBase -Properties objectVersion
+    Write-Verbose "Querying $server for 'objectVersion (Configuration)'"
+    $objectVersionConfig = Get-ADObject -Server $server -LDAPFilter '(objectClass=msExchOrganizationContainer)' -SearchBase $configSearchBase -Properties objectVersion
     
     [PSCustomObject] @{
-        'Domain'                        = $domain
+        'Domain'                        = $server
         'rangeUpper'                    = $rangeUpper.rangeUpper
         'objectVersion (Default)'       = $objectVersionDefault.objectVersion
         'objectVersion (Configuration)' = $objectVersionConfig.objectVersion
