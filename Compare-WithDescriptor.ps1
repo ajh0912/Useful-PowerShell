@@ -40,16 +40,16 @@ pc106 Exists only in RMM
 #>
 
 param (
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ReferenceName,
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$ReferenceObject,
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$DifferenceName,
-    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$DifferenceObject,
-    [Parameter()][ValidateNotNullOrEmpty()][string]$Property = "Name"
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][String]$ReferenceName,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][Object]$ReferenceObject,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][String]$DifferenceName,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][Object]$DifferenceObject,
+    [Parameter()][ValidateNotNullOrEmpty()][String]$Property = "Name"
 )
 
 function Get-SideDescriptor {
     param (
-        [Parameter(Mandatory, ValueFromPipeline)][string]$SideIndicator
+        [Parameter(Mandatory, ValueFromPipeline)][String]$SideIndicator
     )
     switch ($SideIndicator) {
         "<=" {

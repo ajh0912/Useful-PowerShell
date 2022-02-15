@@ -54,7 +54,7 @@ dc2.ad2.example      15334                   13242                         16222
 
 param (
     # Default servers / domains to search are defined here
-    [Parameter()][Alias("Domain")][ValidateNotNullOrEmpty()][string[]]$Servers = $env:USERDNSDOMAIN
+    [Parameter()][Alias("Domain")][ValidateNotNullOrEmpty()][String[]]$Servers = $env:USERDNSDOMAIN
 )
 
 foreach ($server in $Servers) {

@@ -86,18 +86,18 @@ ad1.example/ORG/Computers    True fs01          10.0.0.10   Windows Server 2019 
 
 param (
     # Default domains to search are defined here, use the 'Domains' parameter to override - or change the below line
-    [Parameter()][Alias("Domains")][ValidateNotNullOrEmpty()][string[]]$Servers = ("ad1.example", "ad2.example"),
+    [Parameter()][Alias("Domains")][ValidateNotNullOrEmpty()][String[]]$Servers = ("ad1.example", "ad2.example"),
     # Default type of object to search is User, use 'Type' parameter to override
     # TODO add "Group"
-    [Parameter()][ValidateSet("User", "Computer")][string]$Type = "User",
-    [Parameter()][ValidateNotNullOrEmpty()][string]$Search,
-    [Parameter()][switch]$PassThru
+    [Parameter()][ValidateSet("User", "Computer")][String]$Type = "User",
+    [Parameter()][ValidateNotNullOrEmpty()][String]$Search,
+    [Parameter()][Switch]$PassThru
 )
 
 function Test-ModulePresent {
     param (
-        [Parameter(Mandatory, ValueFromPipeline)][string[]]$Name,
-        [Parameter(ValueFromPipeline)][boolean]$Import = $false
+        [Parameter(Mandatory, ValueFromPipeline)][String[]]$Name,
+        [Parameter(ValueFromPipeline)][Boolean]$Import = $false
     )
     if (Get-Module -Name $Name -ListAvailable) {
         Write-Verbose "Module $Name is present"
@@ -118,7 +118,7 @@ function Test-ModulePresent {
 
 function ConvertTo-ParentCanonical {
     param (
-        [Parameter(Mandatory, ValueFromPipeline)][string[]]$CanonicalName
+        [Parameter(Mandatory, ValueFromPipeline)][String[]]$CanonicalName
     )
     $CanonicalName | ForEach-Object {
         $($_.Substring(0, $($_).lastIndexOf('/')))
@@ -127,10 +127,10 @@ function ConvertTo-ParentCanonical {
 
 function Search-AdObjects {
     param (
-        [Parameter(Mandatory, ValueFromPipeline)][string[]]$Servers,
+        [Parameter(Mandatory, ValueFromPipeline)][String[]]$Servers,
         # TODO add "Group"
-        [Parameter(Mandatory, ValueFromPipeline)][ValidateSet("User", "Computer")][string]$Type,
-        [Parameter(Mandatory, ValueFromPipeline)][string]$Search
+        [Parameter(Mandatory, ValueFromPipeline)][ValidateSet("User", "Computer")][String]$Type,
+        [Parameter(Mandatory, ValueFromPipeline)][String]$Search
     )
     foreach ($server in $Servers) {
         switch ($Type) {
