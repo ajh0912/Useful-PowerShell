@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-v0.2
+v0.3
 Makes the output of Compare-Object easier to read.
 
 .DESCRIPTION
@@ -31,7 +31,7 @@ None. You cannot pipe objects to Compare-WithDescriptor.ps1.
 PSCustomObject. Modified from the output of Compare-Object.
 
 .EXAMPLE
-.\Compare-WithDescriptor.ps1 -ReferenceName AD -ReferenceObject (Import-Csv ad.csv) -DifferenceName RMM -DifferenceObject (Import-Csv rmm.csv) -Property Name
+.\Compare-WithDescriptor.ps1 -ReferenceName AD -ReferenceObject (Import-Csv ad.csv) -DifferenceName RMM -DifferenceObject (Import-Csv rmm.csv)
 
 Name  Comparison Status
 ----  -----------------
@@ -40,11 +40,11 @@ pc106 Exists only in RMM
 #>
 
 param (
-    [Parameter(Mandatory)][string]$ReferenceName,
-    [Parameter(Mandatory)][object]$ReferenceObject,
-    [Parameter(Mandatory)][string]$DifferenceName,
-    [Parameter(Mandatory)][object]$DifferenceObject,
-    [Parameter(Mandatory)][string]$Property = "Name"
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$ReferenceName,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$ReferenceObject,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$DifferenceName,
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$DifferenceObject,
+    [Parameter()][ValidateNotNullOrEmpty()][string]$Property = "Name"
 )
 
 function Get-SideDescriptor {
@@ -64,5 +64,5 @@ function Get-SideDescriptor {
     }
 }
 
-$result = Compare-Object -ReferenceObject $ReferenceObject -DifferenceObject $DifferenceObject -Property $Property
-$result | Select-Object $Property, @{ Name = "Comparison Status"; Expression = { $_.SideIndicator | Get-SideDescriptor } }
+$compareResult = Compare-Object -ReferenceObject $ReferenceObject -DifferenceObject $DifferenceObject -Property $Property
+$compareResult | Select-Object $Property, @{ Name = "Comparison Status"; Expression = { $_.SideIndicator | Get-SideDescriptor } }
