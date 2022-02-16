@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-v0.3
+v0.4
 Query all Azure AD Groups for owners and members that should likely be removed.
 
 .DESCRIPTION
@@ -66,27 +66,17 @@ function Test-ModulePresent {
     }
 }
 
-function Start-AzureADSession {
-    Test-ModulePresent -Name "AzureAD" -Import
-    if (([Microsoft.Open.Azure.AD.CommonLibrary.AzureSession]::AccessTokens).Count -gt 0) {
-        Write-Host "An Azure AD session is already active" -ForegroundColor Green
-    }
-    else {
-        Write-Host "Initiating Azure AD PowerShell session" -ForegroundColor Yellow
-        # https://docs.microsoft.com/en-us/powershell/azure/active-directory/install-adv2
-        Connect-AzureAD
-    }
-}
-
-Start-AzureADSession
+Test-ModulePresent -Name "Microsoft.Graph" -Import
+# https://docs.microsoft.com/en-us/graph/powershell/get-started
+Connect-MgGraph -Scopes "User.Read.All", "Group.Read.All"
 
 function Get-AzureAdGroupInfo {
-    $azureAdGroups = Get-AzureADGroup
-    foreach ($group in $azureAdGroups) {
-        $owners = $group | Get-AzureADGroupOwner
+    $groups = Get-MgGroup
+    foreach ($group in $groups) {
+        $owners = Get-MgGroupOwner -GroupId $group.Id -Property Id, displayName, userPrincipalName, accountEnabled
         foreach ($owner in $owners) {
             [System.Collections.ArrayList]$reason = @()
-            if ($owner.AccountEnabled -eq $false) {
+            if ($owner.AdditionalProperties.accountEnabled -eq $false) {
                 $reason.Add("User is disabled") | Out-Null
             }
             # if ($unlicensed) {
@@ -96,16 +86,16 @@ function Get-AzureAdGroupInfo {
                 [PSCustomObject] @{
                     'GroupName'         = $group.DisplayName
                     'Membership'        = "Owner"
-                    'DisplayName'       = $owner.DisplayName
-                    'UserPrincipalName' = $owner.UserPrincipalName
+                    'DisplayName'       = $owner.AdditionalProperties.displayName
+                    'UserPrincipalName' = $owner.AdditionalProperties.userPrincipalName
                     'Reason'            = $reason -join ", "
                 }
             }
         }
-        $members = $group | Get-AzureADGroupMember
+        $members = Get-MgGroupMember -GroupId $group.Id -Property Id, displayName, userPrincipalName, accountEnabled
         foreach ($member in $members) {
             [System.Collections.ArrayList]$reason = @()
-            if ($member.AccountEnabled -eq $false) {
+            if ($member.AdditionalProperties.accountEnabled -eq $false) {
                 $reason.Add("User is disabled") | Out-Null
             }
             # if ($unlicensed) {
@@ -115,8 +105,8 @@ function Get-AzureAdGroupInfo {
                 [PSCustomObject] @{
                     'GroupName'         = $group.DisplayName
                     'Membership'        = "Member"
-                    'DisplayName'       = $member.DisplayName
-                    'UserPrincipalName' = $member.UserPrincipalName
+                    'DisplayName'       = $member.AdditionalProperties.displayName
+                    'UserPrincipalName' = $member.AdditionalProperties.userPrincipalName
                     'Reason'            = $reason -join ", "
                 }
             }
@@ -125,4 +115,4 @@ function Get-AzureAdGroupInfo {
 }
 
 Get-AzureAdGroupInfo
-# Disconnect-AzureAD
+# Disconnect-MgGraph
