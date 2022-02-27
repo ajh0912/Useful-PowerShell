@@ -1,10 +1,11 @@
 <#
 .SYNOPSIS
-v0.4
-Query all Azure AD Groups for owners and members that should likely be removed.
+v0.5
+Queries all Azure AD / Microsoft 365 users and lists any group memberships that should be reviewed.
 
 .DESCRIPTION
-Queries all groups from Azure AD. Note that this contains all Microsoft 365 groups, Distribution Groups, Security Groups and Mail enabled Security Groups.
+For each user in Azure AD / Microsoft 365 (excluding Equipment, Rooms etc), checks if they are disabled or without a mailbox license. If so, lists all their group ownerships and memberships.
+Note that this contains all Microsoft 365 groups, Distribution Groups, Security Groups and Mail-enabled Security Groups.
 Groups synced from on-premises Active Directory via Azure AD Connect are included.
 
 .INPUTS
@@ -16,32 +17,32 @@ System.Object
 .EXAMPLE
 .\Get-InvalidMembers.ps1
 
-GroupName         : ExampleGroup1
-Membership        : Member
 DisplayName       : Example User1
 UserPrincipalName : example.user1@ad1.example
-Reason            : User is disabled
+Reasons           : User is disabled
+GroupOwnerships   : ExampleGroup1
+GroupMemberships  : ExampleGroup1
 
-GroupName         : ExampleGroup2
-Membership        : Owner
 DisplayName       : Example User2
 UserPrincipalName : example.user2@ad1.example
-Reason            : User is disabled
+Reasons           : User is not licensed for mailbox
+GroupOwnerships   : ExampleGroup1, ExampleGroup2
+GroupMemberships  : ExampleGroup2
 
-GroupName         : ExampleGroup2
-Membership        : Member
-DisplayName       : Example User1
-UserPrincipalName : example.user1@ad1.example
-Reason            : User is disabled
+DisplayName       : Example User3
+UserPrincipalName : example.user3@ad1.example
+Reasons           : User is disabled, User is not licensed for mailbox
+GroupOwnerships   : 
+GroupMemberships  : ExampleGroup2
 
 .EXAMPLE
 .\Get-InvalidMembers.ps1 | Format-Table -AutoSize
 
-GroupName     Membership DisplayName   UserPrincipalName         Reason
----------     ---------- -----------   -----------------         ------
-ExampleGroup1 Member     Example User1 example.user1@ad1.example User is disabled
-ExampleGroup2 Owner      Example User2 example.user2@ad1.example User is disabled
-ExampleGroup2 Member     Example User1 example.user1@ad1.example User is disabled
+DisplayName   UserPrincipalName         Reasons                                            GroupOwnerships              GroupMemberships
+-----------   -----------------         -------                                            ---------------              ----------------
+Example User1 example.user1@ad1.example User is disabled                                   ExampleGroup1                ExampleGroup1
+Example User2 example.user2@ad1.example User is not licensed for mailbox                   ExampleGroup1, ExampleGroup2 ExampleGroup2
+Example User3 example.user3@ad1.example User is disabled, User is not licensed for mailbox                              ExampleGroup2
 #>
 
 function Test-ModulePresent {
@@ -66,53 +67,97 @@ function Test-ModulePresent {
     }
 }
 
-Test-ModulePresent -Name "Microsoft.Graph" -Import
-# https://docs.microsoft.com/en-us/graph/powershell/get-started
-Connect-MgGraph -Scopes "User.Read.All", "Group.Read.All"
+function Start-ExchangeOnlineSession {
+    Test-ModulePresent -Name "ExchangeOnlineManagement" -Import
+    if (Get-PSSession | Where-Object { ($_.State -eq "Opened") -and $_.ConnectionUri -match "https://outlook.office365.com/*" }) {
+        Write-Host "An Exchange Online PowerShell session is already active" -ForegroundColor Green
+    }
+    else {
+        Write-Host "Initiating Exchange Online PowerShell session" -ForegroundColor Yellow
+        # https://docs.microsoft.com/en-us/powershell/exchange/connect-to-exchange-online-powershell
+        Connect-ExchangeOnline
+    }
+}
 
-function Get-AzureAdGroupInfo {
-    $groups = Get-MgGroup
-    foreach ($group in $groups) {
-        $owners = Get-MgGroupOwner -GroupId $group.Id -Property Id, displayName, userPrincipalName, accountEnabled
-        foreach ($owner in $owners) {
-            [System.Collections.ArrayList]$reason = @()
-            if ($owner.AdditionalProperties.accountEnabled -eq $false) {
-                $reason.Add("User is disabled") | Out-Null
-            }
-            # if ($unlicensed) {
-            #     $reason.Add("User is unlicensed") | Out-Null
-            # }
-            if ($reason) {
-                [PSCustomObject] @{
-                    'GroupName'         = $group.DisplayName
-                    'Membership'        = "Owner"
-                    'DisplayName'       = $owner.AdditionalProperties.displayName
-                    'UserPrincipalName' = $owner.AdditionalProperties.userPrincipalName
-                    'Reason'            = $reason -join ", "
-                }
-            }
+function Resolve-LicensePlan {
+    param (
+        [Parameter()][ValidateSet("Mailbox")][string]$Type,
+        [Parameter()][System.Object]$servicePlanId
+    )
+    # Minimum license service plan a user must have to count as entitled to a mailbox for our purposes
+    # Licenses like Microsoft 365 E3, Office 365 E1, Office 365 Business Premium all contain one of these - or bought standalone
+    # License reference: https://docs.microsoft.com/en-us/azure/active-directory/enterprise-users/licensing-service-plan-reference
+    $minimumMailboxLicenses = @{
+        "9aaf7827-d63c-4b61-89c3-182f06f82e5c" = "Exchange Online (Plan 1)"
+        "efb87545-963c-4e0d-99df-69c6916d9eb0" = "EXCHANGE ONLINE (PLAN 2)"
+        "4a82b400-a79f-41a4-b4e2-e94f5787b113" = "EXCHANGE ONLINE KIOSK"
+        "90927877-dcff-4af6-b346-2332c0b15bb7" = "EXCHANGE ONLINE POP"
+        "8c3069c0-ccdb-44be-ab77-986203a67df2" = "EXCHANGE PLAN 2G"
+        "fc52cc4b-ed7d-472d-bbe7-b081c23ecc56" = "EXCHANGE ONLINE PLAN 1"
+        "d42bdbd6-c335-4231-ab3d-c8f348d5aff5" = "EXCHANGE ONLINE (P1)"
+    }
+    if ($Type -eq "Mailbox") {
+        if (($servicePlanId | ForEach-Object { $_ -in $minimumMailboxLicenses.Keys }) -contains $true ) {
+            # Return true if the servicePlanId string was found within the keys of minimumMailboxLicenses
+            $true
         }
-        $members = Get-MgGroupMember -GroupId $group.Id -Property Id, displayName, userPrincipalName, accountEnabled
-        foreach ($member in $members) {
-            [System.Collections.ArrayList]$reason = @()
-            if ($member.AdditionalProperties.accountEnabled -eq $false) {
-                $reason.Add("User is disabled") | Out-Null
-            }
-            # if ($unlicensed) {
-            #     $reason.Add("User is unlicensed") | Out-Null
-            # }
-            if ($reason) {
+        else {
+            $false
+        }
+    }
+}
+
+# Import all modules, if an error is encountered stop the script executing further
+# https://docs.microsoft.com/en-us/powershell/module/exchange/?view=exchange-ps#powershell-v2-module
+Import-Module -Name ExchangeOnlineManagement -ErrorAction Stop
+# https://docs.microsoft.com/en-us/powershell/module/microsoft.graph.users
+Import-Module -Name Microsoft.Graph.Users -ErrorAction Stop
+# https://docs.microsoft.com/en-us/powershell/module/microsoft.graph.groups
+Import-Module -Name Microsoft.Graph.Groups -ErrorAction Stop
+
+# Start the session for Exchange Online PowerShell V2 module
+Start-ExchangeOnlineSession
+
+# Start the session for Microsoft Graph with the permission scopes we need
+# Connect-MgGraph by default outputs 'Welcome To Microsoft Graph!' to the pipeline, we want this written to the console only so it's wrapped with Write-Host
+# For example we don't want 'Welcome To Microsoft Graph!' ending up in a CSV if we run '.\Get-InvalidMembers.ps1 | Export-Csv'
+Write-Host (Connect-MgGraph -Scopes User.Read.All, Group.Read.All -ErrorAction Stop)
+
+# Query all users via Microsoft Graph
+$users = Get-MgUser -Property id, displayName, userPrincipalName, userType, accountEnabled, assignedPlans
+foreach ($user in $users) {
+    # Query mailbox via Exchange Online PowerShell V2 module
+    $mailbox = Get-EXOMailbox -Identity $user.Id -PropertySets Minimum, Resource -ErrorAction SilentlyContinue
+
+    # Only continue if the user is not a Resource mailbox, so we can exclude Equipment, Rooms etc
+    if ($mailbox.IsResource -ne $true) {
+        [System.Collections.ArrayList]$reason = @()
+        if ($user.AccountEnabled -eq $false) {
+            $reason.Add("User is disabled") | Out-Null
+        }
+        $mailboxPlan = Resolve-LicensePlan -Type Mailbox -servicePlanId $user.assignedPlans.servicePlanId
+        # Only add this reason if the user is not entitled to a mailbox, and skip any Guest users
+        if (($mailboxPlan -eq $false) -and ($user.userType -eq "Member")) {
+            $reason.Add("User is not licensed for mailbox") | Out-Null
+        }
+        # Only output an object if there was a reason for concern
+        if ($reason) {
+            $groupMemberships = Get-MgUserMemberOf -UserId $user.Id | ForEach-Object { Get-MgGroup -GroupId $_.Id -ErrorAction SilentlyContinue }    
+            $groupOwnerships = Get-MgUserOwnedObject -UserId $user.Id | ForEach-Object { Get-MgGroup -GroupId $_.Id -ErrorAction SilentlyContinue }
+
+            # Only output an object if they were a member or an owner of a group
+            if ($groupMemberships -or $groupOwnerships) {
                 [PSCustomObject] @{
-                    'GroupName'         = $group.DisplayName
-                    'Membership'        = "Member"
-                    'DisplayName'       = $member.AdditionalProperties.displayName
-                    'UserPrincipalName' = $member.AdditionalProperties.userPrincipalName
-                    'Reason'            = $reason -join ", "
+                    'DisplayName'       = $user.displayName
+                    'UserPrincipalName' = $user.userPrincipalName
+                    'Reasons'           = $reason -join ", "
+                    'GroupOwnerships'   = $groupOwnerships.DisplayName -join ", "
+                    'GroupMemberships'  = $groupMemberships.DisplayName -join ", "
                 }
             }
         }
     }
 }
 
-Get-AzureAdGroupInfo
+# Disconnect-ExchangeOnline -Confirm
 # Disconnect-MgGraph
