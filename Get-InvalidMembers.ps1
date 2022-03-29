@@ -1,13 +1,15 @@
 <#
 .SYNOPSIS
-v0.6
-Queries all Azure AD / Microsoft 365 users and lists any group memberships that should be reviewed.
+v0.7
+Queries all Azure AD / Microsoft 365 users and lists any group memberships and ownerships that should be reviewed.
 
 .DESCRIPTION
-For each user in Azure AD / Microsoft 365 (excluding Equipment, Rooms etc), checks if they are disabled or without a mailbox license. If so, lists all their group ownerships and memberships.
+For each user in Azure AD / Microsoft 365 (excluding Equipment, Rooms etc), checks if they are disabled, a shared mailbox or without a mailbox license. If so, lists all their group ownerships and memberships.
 Note that this contains all Microsoft 365 groups, Distribution Groups, Security Groups and Mail-enabled Security Groups.
 Groups synced from on-premises Active Directory via Azure AD Connect are included.
-Note that if a licensed shared mailbox has an enabled user object, it would be missed by this script. Ensure all user objects for shared mailboxes are disabled.
+
+.PARAMETER ExcludeSharedMailboxes
+If this switch is used, all shared mailbox users are excluded
 
 .INPUTS
 None. You cannot pipe objects to Get-InvalidMembers.ps1.
@@ -20,37 +22,40 @@ System.Object
 
 DisplayName       : Example User1
 UserPrincipalName : example.user1@ad1.example
-Reasons           : User is disabled
+Reasons           : Disabled
 GroupOwnerships   : ExampleGroup1
 GroupMemberships  : ExampleGroup1
 
 DisplayName       : Example User2
 UserPrincipalName : example.user2@ad1.example
-Reasons           : User is not licensed for mailbox
+Reasons           : Shared Mailbox
 GroupOwnerships   : ExampleGroup1, ExampleGroup2
 GroupMemberships  : ExampleGroup2
 
 DisplayName       : Example User3
 UserPrincipalName : example.user3@ad1.example
-Reasons           : User is disabled, User is not licensed for mailbox
+Reasons           : Disabled, No mailbox license
 GroupOwnerships   : 
 GroupMemberships  : ExampleGroup2
 
 .EXAMPLE
 .\Get-InvalidMembers.ps1 | Format-Table -AutoSize
 
-DisplayName   UserPrincipalName         Reasons                                            GroupOwnerships              GroupMemberships
------------   -----------------         -------                                            ---------------              ----------------
-Example User1 example.user1@ad1.example User is disabled                                   ExampleGroup1                ExampleGroup1
-Example User2 example.user2@ad1.example User is not licensed for mailbox                   ExampleGroup1, ExampleGroup2 ExampleGroup2
-Example User3 example.user3@ad1.example User is disabled, User is not licensed for mailbox                              ExampleGroup2
+DisplayName   UserPrincipalName         Reasons                      GroupOwnerships              GroupMemberships
+-----------   -----------------         -------                      ---------------              ----------------
+Example User1 example.user1@ad1.example Disabled                     ExampleGroup1                ExampleGroup1
+Example User2 example.user2@ad1.example Shared Mailbox               ExampleGroup1, ExampleGroup2 ExampleGroup2
+Example User3 example.user3@ad1.example Disabled, No mailbox license                              ExampleGroup2
 
 .EXAMPLE
 .\Get-InvalidMembers.ps1 | Export-Csv -NoTypeInformation -Encoding UTF8 -Path "$(Get-Date -Format yyyy-MM-dd-HHmm)-InvalidMembers.csv"
 
-# CSV file written to current directory named '2022-01-01-1230-InvalidMembers.csv'
+# CSV file written to current directory, named '2022-01-01-1230-InvalidMembers.csv'
 #>
 
+param (
+    [Parameter()][Switch]$ExcludeSharedMailboxes
+)
 
 function Start-ExchangeOnlineSession {
     if (Get-PSSession | Where-Object { ($_.State -eq 'Opened') -and $_.ConnectionUri -match 'https://outlook.office365.com/*' }) {
@@ -108,6 +113,7 @@ Start-ExchangeOnlineSession
 Write-Host (Connect-MgGraph -Scopes User.Read.All, Group.Read.All -ErrorAction Stop)
 
 # Query all users via Microsoft Graph
+# Query could be filtered to be more efficient
 $users = Get-MgUser -All -Property id, displayName, userPrincipalName, userType, accountEnabled, assignedPlans
 foreach ($user in $users) {
     # Query mailbox via Exchange Online PowerShell V2 module
@@ -117,17 +123,29 @@ foreach ($user in $users) {
     if ($mailbox.IsResource -ne $true) {
         [System.Collections.Generic.List[String]]$reason = @()
         
-        if ($user.AccountEnabled -eq $false) {
-            $reason.Add('User is disabled') | Out-Null
+        switch ($user) {
+            { $mailbox.RecipientTypeDetails -eq 'SharedMailbox' -and $ExcludeSharedMailboxes } {
+                # If the ExcludeSharedMailboxes switch parameter was set and the current user is a shared mailbox, stop any reasons being added
+                break
+            }
+            { $_.AccountEnabled -eq $false } {
+                [void]$reason.Add('Disabled') 
+            }
+            { $mailbox.RecipientTypeDetails -eq 'SharedMailbox' } {
+                # If the recipient was a shared mailbox add the below reason
+                [void]$reason.Add('Shared Mailbox')
+            }
+            { $mailbox.RecipientTypeDetails -ne 'SharedMailbox' } {
+                # If the user wasn't a shared mailbox, check if they are licensed
+                $mailboxPlan = Resolve-LicensePlan -Type Mailbox -AssignedPlans $user.assignedPlans
+                # Only add this reason if the user is not entitled to a mailbox, and skip any Guest users
+                if (($mailboxPlan -eq $false) -and ($user.userType -eq 'Member')) {
+                    [void]$reason.Add('No mailbox license')
+                }
+            }
         }
         
-        $mailboxPlan = Resolve-LicensePlan -Type Mailbox -AssignedPlans $user.assignedPlans
-        # Only add this reason if the user is not entitled to a mailbox, and skip any Guest users
-        if (($mailboxPlan -eq $false) -and ($user.userType -eq 'Member')) {
-            $reason.Add('User is not licensed for mailbox') | Out-Null
-        }
-        
-        # Only output an object if there was a reason for concern
+        # Only output an object if there was a reason for potential concern
         if ($reason) {
             # Errors returned from Get-MgGroup are silently ignored, especially for objects piped from Get-MgUserOwnedObject which can contain owned non-group objects
             $groupMemberships = Get-MgUserMemberOf -UserId $user.Id | ForEach-Object { Get-MgGroup -GroupId $_.Id -ErrorAction SilentlyContinue }
