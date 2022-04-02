@@ -154,16 +154,21 @@ function Start-AzureAdSync {
         # If the 'Credential' parameter is supplied to this function, include it in the parameters for Invoke-Command
         $parameters['Credential'] = $Credential
     }
-    $result = Invoke-Command @parameters -ScriptBlock {
+    Invoke-Command @parameters -ScriptBlock {
         Import-Module ADSync
-        Start-ADSyncSyncCycle -PolicyType $Type
-    }
-    if ($result.Result -eq 'Success') {
-        Write-Host "${Server}: Azure AD Connect $Type sync started" -ForegroundColor Green
-    }
-    else {
-        Write-Error "${Server}: Failed to Azure AD Connect $Type sync"
-        $result
+        try {
+            Start-ADSyncSyncCycle -PolicyType $Type -ErrorAction Stop | Out-Null
+            Write-Host ("{0}: Azure AD Connect {1} sync started" -f $Using:Server, $Using:Type) -ForegroundColor Green
+        }
+        catch {
+            if ($_ -match 'AAD is busy.'){
+                Write-Error ("{0}: Azure AD Connect sync error 'AAD is busy', a sync is likely already in progress" -f $Using:Server)
+            }
+            else {
+                Write-Error $_
+                Write-Error ("{0}: Failed to Azure AD Connect {1} sync" -f $Using:Server, $Using:Type)
+            }
+        }
     }
 }
 
