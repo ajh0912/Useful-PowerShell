@@ -3,21 +3,57 @@
 Processes a user as a leaver and converts to a shared mailbox.
 
 .DESCRIPTION
-Gets users currently in 'Leavers' OU and processes each one in order.
+Gets users currently in 'Leavers' OU and processes each one sequentially.
 Prompts interactively for:
--Whether a user's manager should be delegated OneDrve, mailbox access.
--What to do with the user's mail, forwarding / Out of office / Deny inbound / nothing.
--What to do when a user is an owner on Azure AD / Microsoft 365 groups
+- Whether a user's manager should be delegated OneDrive, mailbox access.
+- What to do with the user's mail, forwarding / Out of office / Deny inbound / nothing.
+- Whether to add their manager as an owner on Azure AD / Microsoft 365 groups the user owned.
 
 Disables user, resets password to random, hides from Exchange global address list and sets description (note any existing description will be lost).
-Depending on previous choice: For groups the user was the lone owner of replace them with their manager, or all groups they were an owner of, or none.
-Removes a user from all local Active Directory and Azure AD / Microsoft 365 groups and ownerships.
+Depending on interactive choice: For groups the user was the lone owner of replace them with their manager, or all groups they were an owner of, or none.
+Removes a user from all local Active Directory (other than exclusions) and Azure AD / Microsoft 365 groups and ownerships.
 Converts the mailbox to a shared mailbox and assigns an Exchange Online (Plan 2) license assigned if needed.
 Moves to 'Leavers - Shared Mailboxes' OU.
 After all users are processed, runs an Azure AD Connect sync and outputs the summary of users.
 
-Currently relies on group based licensing for removing exisitng licenses and assigning Exchange Online (Plan 2) if needed.
+Currently relies on group based licensing for removing existing licenses and assigning Exchange Online (Plan 2) if needed.
 Currently requires Exchange On-Premises, and assumes that all mailboxes are hosted in Exchange Online.
+
+.PARAMETER LeaverOU
+Name or DistinguishedName of the Organizational Unit containing the users this script should process.
+Note that you must use DistinguishedName if more than one OU exists in your Active Directory forest with this name.
+
+.PARAMETER LeaverSharedMailboxOU
+Name or DistinguishedName of the Organizational Unit that users should be moved to once processed.
+Note that you must use DistinguishedName if more than one OU exists in your Active Directory forest with this name.
+
+.PARAMETER GroupExclusionOUs
+Name or DistinguishedName of the Organizational Unit(s), where any groups within should be excluded from removal when processing each user.
+Note that you must use DistinguishedName if more than one OU exists in your Active Directory forest with this name.
+Explanation of default parameter values:
+- Group Writeback:
+    - If you have the Group Writeback feature of Azure AD Connect enabled, it makes sense to exclude any of those groups from removal when processing as a leaver.
+    - This is just to reduce chance of confusion as these groups are a read-only representations of the status in Azure AD / Microsoft 365, local changes are overridden on each Azure AD Connect sync.
+- Symbolic Groups:
+    - If you have any groups that are used for keeping track of user permissions or accounts for non-SSO platforms, put them in an OU called 'Symbolic Groups'
+    - The script will not remove members from these symbolic groups automatically then, as manual action needs performed before removing membership.
+
+.PARAMETER DenyInboundEmailGroup
+Name, SamAccountName or DistinguishedName of an Active Directory mail enabled security group or distribution group (synced to Azure AD).
+The following Exchange transport rule should be configured (for an example group email alias):
+    If the message... Is sent to a member of group 'DenyInboundEmail@domain.example'
+    Do the following... reject the message with the explanation 'Account no longer exists'
+
+.PARAMETER SharedMailboxLicenseGroup
+Name, SamAccountName or DistinguishedName of an Active Directory security group (synced to Azure AD).
+This group should be configured in Azure AD to assign the appropriate Microsoft 365 license, for example Exchange Online (Plan 2).
+Any user objects whose mailbox exceeds 50GB or has an Online Archive / In-Place Archive will be added into this group.
+
+.PARAMETER ExchangeServer
+On-Premises Microsoft Exchange Server.
+
+.PARAMETER AzureAdSyncServer
+The server running Azure AD Connect.
 
 .INPUTS
 None. You cannot pipe objects to Invoke-Leaver.ps1.
@@ -36,6 +72,7 @@ Testing User1: Valid remote user mailbox
 Testing User1: Valid Exchange Online license
 Testing User1: Mailbox has Online Archive / In-Place Archive
 Testing User1: Must remain licensed for Exchange Online after conversion to shared mailbox
+Testing User1: Warning, only 1 'Exchange Online (Plan 2)' license free
 Testing User1: Has manager 'Example Manager'
 
 Testing User1: OneDrive Ownership
@@ -44,24 +81,15 @@ Should manager 'Example Manager' be granted OneDrive permission?
 ...
 #>
 
-$azureAdSyncServer = 'sync01'
-$exchangeServer = 'exc01'
-# Group should be a mail enabled security group or a distribution group. Make an Exchange transport rule of:
-# If the message... Is sent to a member of group 'DenyInboundEmail@domain.example'
-# Do the following... reject the message with the explanation 'User is no longer with company'
-$denyInboundEmailGroup = Get-ADGroup -Filter 'Name -eq "Deny Inbound Email"'
-# Group should have group-based licensing configured in the Azure AD portal
-$licenseGroupExchangeOnlineP2 = Get-ADGroup -Filter 'Name -eq "Exchange Online (Plan 2)"'
-# OU that a user will be moved into (manually or via Invoke-Leaver.ps1) once they have left the company, but before they have been converted to a shared mailbox
-$dnLeaverOU = 'OU=Leavers,OU=Users,OU=ORG,DC=ad,DC=example'
-# OU that the user will be moved into automatically after conversion to a shared mailbox
-$dnLeaverSharedMailboxesOU = 'OU=Leavers - Shared Mailboxes,OU=Users,OU=ORG,DC=ad,DC=example'
-$dnExcludeFromGroupRemoval = (
-    # Avoiding removing a user from an Active Directory group created by the Group Writeback feature of Azure AD Connect
-    # This is just to reduce chance of confusion as these groups are read-only representations of the status in Azure AD / Microsoft 365, local changes are overriden on each Azure AD Connect sync
-    'OU=Group Writeback,OU=Security Groups,OU=Groups,OU=ORG,DC=ad,DC=example',
-    # Avoid removing members from these symbolic groups automatically, as they need reviewed manually before taking a user out
-    'OU=Symbolic Groups,OU=Security Groups,OU=Groups,OU=ORG,DC=ad,DC=example'
+param (
+    [Parameter()][ValidateNotNullOrEmpty()][String]$LeaverOU = 'Leavers',
+    [Parameter()][ValidateNotNullOrEmpty()][String]$LeaverSharedMailboxOU = 'Leavers - Shared Mailboxes',
+    [Parameter()][ValidateNotNullOrEmpty()][array]$GroupExclusionOUs = ('Group Writeback', 'Symbolic Groups'),
+    [Parameter()][ValidateNotNullOrEmpty()][String]$DenyInboundEmailGroup = 'Deny Inbound Email',
+    [Parameter()][ValidateNotNullOrEmpty()][String]$SharedMailboxLicenseGroup = 'Exchange Online (Plan 2)',
+    [Parameter()][ValidateNotNullOrEmpty()][String]$ExchangeServer = 'exc01',
+    [Parameter()][Alias('AADSync')][ValidateNotNullOrEmpty()][String]$AzureAdSyncServer = 'sync01',
+    [Parameter()][switch]$SkipLicenseCheck
 )
 
 function Start-ExchangeOnlineSession {
@@ -434,7 +462,7 @@ function Get-GroupLicenseStatus {
     )
     try {
         # Find the Azure AD group object that comes from the Active Directory group (via Azure AD Connect)
-        $azureAdLicenseGroup = Get-MgGroup -Filter "OnPremisesSecurityIdentifier eq '$($Group.SID)'" -Property DisplayName, AssignedLicenses -ErrorAction Stop
+        $azureAdLicenseGroup = Get-MgGroup -Filter "OnPremisesSamAccountName eq '$($Group.SamAccountName)'" -Property DisplayName, AssignedLicenses -ConsistencyLevel eventual -Count groupCount -ErrorAction Stop
         # List all licenses the tenant has
         $tenantSubscribedSkus = Get-MgSubscribedSku
         # Filter the tenant licenses down to only the SkuId that the license group has
@@ -478,10 +506,57 @@ function Get-StatusObject {
     }
 }
 
+function Get-Object {
+    param (
+        [Parameter(Mandatory)][ValidateSet('Group', 'OrganizationalUnit')][string]$Type,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Identity
+    )
+    $commonParameters = @{
+        Properties = 'DistinguishedName', 'Name', 'SamAccountName', 'ObjectSID'
+        ErrorAction = 'Stop'
+    }
+    foreach ($singleIdentity in $Identity) {
+        if ($singleIdentity -match $dnRegex) {
+            # If the $Identity value is a distinguished name use the Identity parameter to get an exact match
+            $parameters = @{
+                Identity = "$singleIdentity"
+            }
+            $results = Get-ADObject @commonParameters @parameters
+        }
+        else {
+            # If the $singleIdentity value was not a distinguished name assume it is a Name or SamAccountName
+            # Unfortunately the Identity parameter does not support Name, so we will use the Filter parameter - which might return more than one result
+            # Note for groups an edge case is possible where one group has the Name of $Identity, and another group has the SamAccountName of $singleIdentity
+            # In that case you would always have too many objects being returned
+            $parameters = @{
+                Filter = "((Name -eq '$singleIdentity') -or (SamAccountName -eq '$singleIdentity')) -and (ObjectClass -eq '$Type')"
+            }
+            $results = Get-ADObject @commonParameters @parameters
+        }
+        
+        $resultsCount = ($results | Measure-Object).Count
+        switch ($resultsCount) {
+            { $_ -eq 0 } {
+                Write-Error ("Could not find a {0} with Identity '{1}'" -f $Type, $singleIdentity) -ErrorAction Stop
+                break
+            }
+            { $_ -eq 1 } {
+                $results
+                break
+            }
+            { $_ -gt 1 } {
+                # If more than one object was returned from our Get-ADGroup command
+                Write-Error ("Too many {0} objects returned ({1}) matching Identity '{2}', max 1" -f $Type, $resultsCount, $singleIdentity) -ErrorAction Stop
+                break
+            }
+        }
+    }
+}
+
 # https://docs.microsoft.com/en-us/powershell/module/microsoft.graph.users
-Import-Module -Name Microsoft.Graph.Users -ErrorAction Stop
 # https://docs.microsoft.com/en-us/powershell/module/microsoft.graph.groups
-Import-Module -Name Microsoft.Graph.Groups -ErrorAction Stop
+# https://docs.microsoft.com/en-us/powershell/module/microsoft.graph.identity.directorymanagement
+Import-Module -Name Microsoft.Graph.Users, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement -ErrorAction Stop
 # https://docs.microsoft.com/en-us/powershell/module/exchange
 Import-Module -Name ExchangeOnlineManagement -ErrorAction Stop
 # https://docs.microsoft.com/en-us/powershell/module/sharepoint-online
@@ -489,17 +564,13 @@ Import-Module -Name Microsoft.Online.SharePoint.PowerShell -ErrorAction Stop -Wa
 # https://docs.microsoft.com/en-us/powershell/module/activedirectory
 Import-Module -Name ActiveDirectory -ErrorAction Stop
 
-# Build a regex expression out of the above $dnExcludeFromGroupRemoval array
-# Modified from https://devblogs.microsoft.com/scripting/speed-up-array-comparisons-in-powershell-with-a-runtime-regex/
-[regex]$dnExcludeFromGroupRemovalRegex = '(?i)(' + (($dnExcludeFromGroupRemoval | ForEach-Object { [regex]::escape($_) }) -join '|') + ')$'
-
 # Start the session for Microsoft Graph with the permission scopes we need and send output to console (interactive modern auth prompt)
 Write-Host (Connect-MgGraph -Scopes User.ReadWrite.All, Group.ReadWrite.All, Directory.Read.All -ErrorAction Stop)
 # Start the session for Exchange Online (interactive modern auth prompt)
 Start-ExchangeOnlineSession
 # Start the session with Exchange On-Premises (authentication from your PowerShell session with Kerberos or basic auth)
 # Note that all cmdlets from Exchange On-Premises will be prefixed with 'OnPremises' to allow easy distinguishing between On-Premises and Exchange Online
-Start-ExchangeOnPremisesSession -Server $exchangeServer
+Start-ExchangeOnPremisesSession -Server $ExchangeServer
 
 # Get the current tenant's root SharePoint site, then take the WebUrl and add '-admin' after the tenant name
 # Note that this does not work with the legacy 'Vanity SharePoint Domain' feature from BPOS-D / Office 365 Dedicated, eg. sharepoint.contoso.com rather than contoso.sharepoint.com
@@ -507,8 +578,26 @@ $rootSiteAdminUrl = (Get-MgSite -SiteId root).WebUrl -replace '.sharepoint.com',
 # Connect to SharePoint Online PowerShell (interactive modern auth prompt)
 Start-SharePointOnlineSession -Url $rootSiteAdminUrl
 
+# Regex from Daniele Catanesi https://pscustomobject.github.io/powershell/howto/identity%20management/PowerShell-Check-If-String-Is-A-DN/
+[regex]$dnRegex = '^(?:(?<cn>CN=(?<name>(?:[^,]|\,)*)),)?(?:(?<path>(?:(?:CN|OU)=(?:[^,]|\,)+,?)+),)?(?<domain>(?:DC=(?:[^,]|\,)+,?)+)$'
+
+try {
+    $leaverOuObject = Get-Object -Type OrganizationalUnit -Identity $LeaverOU
+    $leaverSharedMailboxOuObject = Get-Object -Type OrganizationalUnit -Identity $LeaverSharedMailboxOU
+    $groupExclusionOuObjects = Get-Object -Type OrganizationalUnit -Identity $GroupExclusionOUs
+    $denyInboundEmailGroupObject = Get-Object -Type Group -Identity $DenyInboundEmailGroup
+    $sharedMailboxLicenseGroupObject = Get-Object -Type Group -Identity $SharedMailboxLicenseGroup
+}
+catch {
+    Write-Error $_ -ErrorAction Stop
+}
+
+# Build a regex expression out of the $groupExclusionOuObjects array
+# Regex modified from Rob Campbell / Ed Wilson https://devblogs.microsoft.com/scripting/speed-up-array-comparisons-in-powershell-with-a-runtime-regex/
+[regex]$groupExclusionOuDnRegex = '(?i)(' + (($groupExclusionOuObjects.DistinguishedName | ForEach-Object { [regex]::escape($_) }) -join '|') + ')$'
+
 # Get all users from the Leavers OU in Active Directory
-$users = Get-ADUser -SearchBase $dnLeaverOU -Filter * -Properties Company, DisplayName, DistinguishedName, EmailAddress, Manager, MemberOf, SamAccountName, UserPrincipalName
+$users = Get-ADUser -SearchBase $leaverOuObject -Filter * -Properties Company, DisplayName, DistinguishedName, EmailAddress, Manager, MemberOf, SamAccountName, UserPrincipalName
 # Get all Azure AD / Microsoft 365 groups that do not come from Active Directory (via Azure AD Connect)
 $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -ConsistencyLevel eventual -Count groupCount
 
@@ -541,10 +630,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         $azureAdUser = Get-MgUser -UserId $user.UserPrincipalName -Property id, displayName, userPrincipalName, userType, accountEnabled, assignedPlans, mySite
     }
     catch {
-        Write-Error ("{0}: No Azure AD / Microsoft 365 user" -f $user.DisplayName)
+        $errorMessage = "{0}: No Azure AD / Microsoft 365 user" -f $user.DisplayName
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Skipped
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Skipped -Reason $_)
+            $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'catch' condition is met
         Continue UserForeach
@@ -554,10 +644,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         $remoteMailbox = Get-OnPremisesRemoteMailbox -Identity $user.UserPrincipalName -ErrorAction Stop
     }
     catch {
-        Write-Error ("{0}: No mailbox known by '{1}'" -f $user.DisplayName, $exchangeServer)
+        $errorMessage = "{0}: No mailbox known by '{1}'" -f $user.DisplayName, $ExchangeServer
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Skipped
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Skipped -Reason $_)
+            $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'catch' condition is met
         Continue UserForeach
@@ -567,10 +658,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         Write-Host ("{0}: Valid remote user mailbox" -f $user.DisplayName) -ForegroundColor Green
     }
     else {
-        Write-Error ("{0}: No valid remote user mailbox. Expected 'RemoteUserMailbox' got '{1}'" -f $user.DisplayName, $remoteMailbox.RecipientTypeDetails)
+        $errorMessage = "{0}: No valid remote user mailbox. Expected 'RemoteUserMailbox' got '{1}'" -f $user.DisplayName, $remoteMailbox.RecipientTypeDetails
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Skipped
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Skipped -Reason $_)
+            $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'else' condition is met
         Continue UserForeach
@@ -580,10 +672,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         Write-Host ("{0}: Valid Exchange Online license" -f $user.DisplayName) -ForegroundColor Green
     }
     else {
-        Write-Error ("{0}: No valid Exchange Online license. License is required at the time of conversion" -f $user.DisplayName)
+        $errorMessage = "{0}: No valid Exchange Online license. License is required at the time of conversion" -f $user.DisplayName
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Skipped
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Skipped -Reason $_)
+            $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'else' condition is met
         Continue UserForeach
@@ -613,40 +706,45 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             Write-Host ("{0}: Mailbox has Online Archive / In-Place Archive" -f $user.DisplayName) -ForegroundColor Cyan
         }
         Write-Host ("{0}: Must remain licensed for Exchange Online after conversion to shared mailbox" -f $user.DisplayName) -ForegroundColor Yellow
-        # Add the current user to $userStatus with the status of Skipped
+        # Add to $actions
         [void]$actions.Add(
             @{ 'LicenseRequiredAfterConversion' = $true }
         )
-        :LicenseLoop while ($true) {
-            $licenseStatus = Get-GroupLicenseStatus -Group $licenseGroupExchangeOnlineP2
-            switch ($licenseStatus) {
-                { $_.UnassignedUnits -eq 0 } {
-                    $choiceLicenseIssueParams = @{
-                        Title   = "{0}: No '{1}' license free" -f $user.DisplayName, $licenseGroupExchangeOnlineP2.Name
-                        Message = "User requires a {0} license, but there are no remaining licenses free" -f $licenseGroupExchangeOnlineP2.Name
-                        Options = @(
-                            @{ Name = 'Retry'; HelpText = 'Check available licenses again, for example after freeing up a license or adding more' } # Default Option
-                            @{ Name = 'Skip'; HelpText = 'Skip the current user and do not perform any actions on them' }
-                        )
-                    }
-                    switch (Read-UserChoice @choiceLicenseIssueParams) {
-                        'Retry' { break }
-                        'Skip' {
-                            Write-Host ("{0}: Skipping user without performing changes" -f $user.DisplayName)
-                            # Add the current user to $userStatus with the status of Skipped. Add a specific Reason
-                            [void]$userStatus.Add(
-                                $(Get-StatusObject -User $User -Status Skipped -Reason ("No remaining {0} licenses free" -f $licenseGroupExchangeOnlineP2.Name))
+        if ($SkipLicenseCheck){
+            Write-Host ("{0}: Skipping available license check for '{1}'" -f $user.DisplayName, $sharedMailboxLicenseGroupObject.Name)
+        }
+        else{
+            :LicenseLoop while ($true) {
+                $licenseStatus = Get-GroupLicenseStatus -Group $sharedMailboxLicenseGroupObject
+                switch ($licenseStatus) {
+                    { $_.UnassignedUnits -eq 0 } {
+                        $choiceLicenseIssueParams = @{
+                            Title   = "{0}: No '{1}' license free" -f $user.DisplayName, $sharedMailboxLicenseGroupObject.Name
+                            Message = "User requires a {0} license, but there are no remaining licenses free" -f $sharedMailboxLicenseGroupObject.Name
+                            Options = @(
+                                @{ Name = 'Retry'; HelpText = 'Check available licenses again, for example after freeing up a license or adding more' } # Default Option
+                                @{ Name = 'Skip'; HelpText = 'Skip the current user and do not perform any actions on them' }
                             )
-                            Continue UserForeach
                         }
+                        switch (Read-UserChoice @choiceLicenseIssueParams) {
+                            'Retry' { break }
+                            'Skip' {
+                                Write-Host ("{0}: Skipping user without performing changes" -f $user.DisplayName)
+                                # Add the current user to $userStatus with the status of Skipped. Add a specific Reason
+                                [void]$userStatus.Add(
+                                    $(Get-StatusObject -User $User -Status Skipped -Reason ("No remaining {0} licenses free" -f $sharedMailboxLicenseGroupObject.Name))
+                                )
+                                Continue UserForeach
+                            }
+                        }
+                        break
                     }
-                    break
+                    { $_.UnassignedUnits -eq 1 } {
+                        Write-Host ("{0}: Warning, only 1 '{1}' license free" -f $user.DisplayName, $sharedMailboxLicenseGroupObject.Name) -ForegroundColor Yellow
+                        Break LicenseLoop
+                    }
+                    Default { Break LicenseLoop }
                 }
-                { $_.UnassignedUnits -eq 1 } {
-                    Write-Host ("{0}: Warning, only 1 '{1}' license free" -f $user.DisplayName, $licenseGroupExchangeOnlineP2.Name) -ForegroundColor Yellow
-                    Break LicenseLoop
-                }
-                Default { Break LicenseLoop }
             }
         }
     }
@@ -885,7 +983,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             Write-Host ("- Have their manager '{0}' added to {1} groups they were an owner of" -f $manager.DisplayName, ($groupOwnerResults | Measure-Object).Count)
         }
         { $_.LicenseRequiredAfterConversion } {
-            Write-Host ("- Have their Microsoft 365 licenses removed and an {0} license assigned" -f $licenseGroupExchangeOnlineP2.Name)
+            Write-Host ("- Have their Microsoft 365 licenses removed and an {0} license assigned" -f $sharedMailboxLicenseGroupObject.Name)
         }
         { $_.LicenseRequiredAfterConversion -eq $false } {
             Write-Host '- Have their Microsoft 365 licenses removed'
@@ -908,10 +1006,10 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             Write-Host "- Have all inbound emails rejected with error: 'Your message couldn't be delivered'"
         }
         { $_.MailboxManagerPermission } {
-            Write-Host ("- Have read and manage permssion added on their mailbox for manager '{0}'" -f $manager.DisplayName)
+            Write-Host ("- Have read and manage permission added on their mailbox for manager '{0}'" -f $manager.DisplayName)
         }
         { $_.OneDriveManagerPermission } {
-            Write-Host ("- Have their manager '{0}' added as a OneDrive site collection adminministrator" -f $manager.DisplayName)
+            Write-Host ("- Have their manager '{0}' added as a OneDrive site collection administrator" -f $manager.DisplayName)
         }
     }
     
@@ -942,10 +1040,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         }
         catch {
             Write-Error $_
-            Write-Error ("{0}: Failed to disable user" -f $user.DisplayName)
+            $errorMessage = "{0}: Failed to disable user" -f $user.DisplayName
+            Write-Error $errorMessage
             # Add the current user to $userStatus with the status of Errored
             [void]$userStatus.Add(
-                $(Get-StatusObject -User $User -Status Errored -Reason $_)
+                $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
             )
             # Skip the current user in the foreach loop if this 'catch' condition is met
             Continue UserForeach
@@ -958,10 +1057,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     }
     catch {
         Write-Error $_
-        Write-Error ("{0}: Failed to reset password to random" -f $user.DisplayName)
+        $errorMessage = "{0}: Failed to reset password to random" -f $user.DisplayName
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Errored
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Errored -Reason $_)
+            $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'catch' condition is met
         Continue UserForeach
@@ -978,10 +1078,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     }
     catch {
         Write-Error $_
-        Write-Error ("{0}: Failed to set remote mailbox type to shared in Exchange On-Premises / Active Directory - skipping all futher actions" -f $user.DisplayName)
+        $errorMessage = "{0}: Failed to set remote mailbox type to shared in Exchange On-Premises / Active Directory - skipping all further actions" -f $user.DisplayName
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Errored
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Errored -Reason $_)
+            $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'catch' condition is met
         Continue UserForeach
@@ -996,10 +1097,11 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     }
     catch {
         Write-Error $_
-        Write-Error ("{0}: Failed to set mailbox type to shared in Exchange Online - skipping all futher actions" -f $user.DisplayName)
+        $errorMessage = "{0}: Failed to set mailbox type to shared in Exchange Online - skipping all further actions" -f $user.DisplayName
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Errored
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Errored -Reason $_)
+            $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'catch' condition is met
         Continue UserForeach
@@ -1011,25 +1113,27 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     }
     catch {
         Write-Error $_
-        Write-Error ("{0}: Failed to set user description and/or hide from GAL" -f $user.DisplayName)
+        $errorMessage = "{0}: Failed to set user description and/or hide from GAL" -f $user.DisplayName
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Errored
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Errored -Reason $_)
+            $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'catch' condition is met
         Continue UserForeach
     }
     
     try {
-        Move-ADObject -Identity $user -TargetPath $dnLeaverSharedMailboxesOU
+        Move-ADObject -Identity $user -TargetPath $leaverSharedMailboxOuObject
         Write-Host ("{0}: User moved to Shared Mailboxes OU" -f $user.DisplayName) -ForegroundColor Cyan
     }
     catch {
         Write-Error $_
-        Write-Error ("{0}: Failed to move user to Shared Mailboxes OU" -f $user.DisplayName)
+        $errorMessage = "{0}: Failed to move user to Shared Mailboxes OU" -f $user.DisplayName
+        Write-Error $errorMessage
         # Add the current user to $userStatus with the status of Errored
         [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Errored -Reason $_)
+            $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
         )
         # Skip the current user in the foreach loop if this 'catch' condition is met
         Continue UserForeach
@@ -1050,12 +1154,12 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         }
         { $_.LicenseRequiredAfterConversion } {
             [void]$groupStatus.Add(
-                $(Set-ADGroupMembership -Action Add -User $user -Groups $licenseGroupExchangeOnlineP2)
+                $(Set-ADGroupMembership -Action Add -User $user -Groups $sharedMailboxLicenseGroupObject)
             )
         }
         { $_.MailboxDenyInbound } {
             [void]$groupStatus.Add(
-                $(Set-ADGroupMembership -Action Add -User $user -Groups $denyInboundEmailGroup)
+                $(Set-ADGroupMembership -Action Add -User $user -Groups $denyInboundEmailGroupObject)
             )
             Write-Host ("{0}: Note when Deny Inbound is used, Out of Office is automatically set for MailTip and availability status. No Out of Office email reply will be sent" -f $User.DisplayName) -ForegroundColor Cyan
         }
@@ -1076,7 +1180,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     foreach ($adGroupDn in $user.MemberOf) {
         $adGroup = Get-AdGroup -Identity $adGroupDn
         
-        if ($adGroupDn -notmatch $dnExcludeFromGroupRemovalRegex.ToString()) {
+        if ($adGroupDn -notmatch $groupExclusionOuDnRegex.ToString()) {
             [void]$groupStatus.Add(
                 $(Set-ADGroupMembership -Action Remove -User $user -Groups $adGroup)
             )
@@ -1118,8 +1222,10 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     )
 }
 
-# After processing all users, start an Azure AD Connect sync
-Start-AzureAdSync -Server $azureAdSyncServer
+if ($userStatus.Status -contains 'Completed') {
+    # After processing users in Leavers OU, if at least one user is completed start an Azure AD Connect sync
+    Start-AzureAdSync -Server $AzureAdSyncServer
+}
 
 if ($userStatus) {
     Write-Host "`nUser status summary:" -ForegroundColor Yellow
@@ -1128,6 +1234,6 @@ if ($userStatus) {
 
 #### Cleanup sessions
 # Disconnect-MgGraph
-# Disconnect-ExchangeOnline
+# Disconnect-ExchangeOnline -Confirm:$false
 # Remove-PSSession $OnPremisesSession
 # Disconnect-SPOService
