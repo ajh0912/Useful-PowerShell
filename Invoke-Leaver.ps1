@@ -1,6 +1,5 @@
 <#
 .SYNOPSIS
-v0.99
 Processes a user as a leaver and converts to a shared mailbox.
 
 .DESCRIPTION
@@ -143,7 +142,7 @@ function Get-RandomPassword {
 
 function Start-AzureAdSync {
     param (
-        [Parameter()][Alias('ComputerName')][ValidateNotNullOrEmpty()][String]$Server,
+        [Parameter(Mandatory)][Alias('ComputerName')][ValidateNotNullOrEmpty()][String]$Server,
         [Parameter()][Alias('PolicyType')][ValidateSet('Delta', 'Initial')][String]$Type = 'Delta',
         [Parameter(ValueFromPipelineByPropertyName)][PSCredential]$Credential
     )
@@ -161,12 +160,19 @@ function Start-AzureAdSync {
             Write-Host ("{0}: Azure AD Connect {1} sync started" -f $Using:Server, $Using:Type) -ForegroundColor Green
         }
         catch {
-            if ($_ -match 'AAD is busy.'){
-                Write-Error ("{0}: Azure AD Connect sync error 'AAD is busy', a sync is likely already in progress" -f $Using:Server)
-            }
-            else {
-                Write-Error $_
-                Write-Error ("{0}: Failed to Azure AD Connect {1} sync" -f $Using:Server, $Using:Type)
+            switch ($_) {
+                { $_ -match 'Sync is already running' } {
+                    Write-Error ("{0}: Azure AD Connect sync error 'Sync is already running'" -f $Using:Server)
+                    break
+                }
+                { $_ -match 'AAD is busy' } {
+                    Write-Error ("{0}: Azure AD Connect sync error 'AAD is busy', a sync is likely already in progress" -f $Using:Server)
+                    break
+                }
+                Default {
+                    Write-Error $_
+                    Write-Error ("{0}: Failed to Azure AD Connect {1} sync" -f $Using:Server, $Using:Type)
+                }
             }
         }
     }
