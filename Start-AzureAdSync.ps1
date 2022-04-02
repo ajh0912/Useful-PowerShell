@@ -1,6 +1,5 @@
 <#
 .SYNOPSIS
-v0.1
 Start an Azure AD Connect sync cycle on the specified server.
 
 .DESCRIPTION
@@ -27,9 +26,7 @@ System.Object
 .EXAMPLE
 .\Start-AzureAdSync.ps1 -Server sync01
 
-PSComputerName RunspaceId                           Result
--------------- ----------                           ------
-sync01         d5531430-15b4-4b08-89e0-091ebff70675 Success
+sync01: Azure AD Connect Delta sync started
 
 .EXAMPLE
 .\Start-AzureAdSync.ps1 -Server sync01 -Credential (Get-Credential)
@@ -37,28 +34,32 @@ Supply values for the following parameters:
 Credential
 # Credential dialog box prompts for Username and Password
 
-PSComputerName RunspaceId                           Result
--------------- ----------                           ------
-sync01         d5531430-15b4-4b08-89e0-091ebff70675 Success
+sync01: Azure AD Connect Delta sync started
 
 .EXAMPLE
 .\Start-AzureAdSync.ps1 -Server sync01
 
-System.InvalidOperationException: Connector: example.onmicrosoft.com - AAD is busy.
-   at Microsoft.MetadirectoryServices.Scheduler.Scheduler.StartSyncCycle(String overridePolicy, Boolean interactiveMode)
-   at SchedulerUtils.StartSyncCycle(SchedulerUtils* , Char* policyType, Int32 interactiveMode, Char** errorString)
-    + CategoryInfo          : WriteError: (Microsoft.Ident...ADSyncSyncCycle:StartADSyncSyncCycle) [Start-ADSyncSyncCycle], InvalidOperationException
-    + FullyQualifiedErrorId : System.InvalidOperationException: Connector: example.onmicrosoft.com - AAD is busy.
-   at Microsoft.MetadirectoryServices.Scheduler.Scheduler.StartSyncCycle(String overridePolicy, Boolean interactiveMode)
-   at SchedulerUtils.StartSyncCycle(SchedulerUtils* , Char* policyType, Int32 interactiveMode, Char** errorString),Microsoft.IdentityManagement.PowerShell.Cmdlet.StartADSyncSyncCycle
+sync01: Azure AD Connect sync error 'AAD is busy', a sync is likely already in progress
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException
     + PSComputerName        : sync01
 
-# If an Azure AD sync is already in progress, an error is produced from the Start-ADSyncSyncCycle cmdlet.
+# If an Azure AD sync is already in progress, a more readable error is shown
+
+.EXAMPLE
+.\Start-AzureAdSync.ps1 -Server sync01
+
+sync01: Azure AD Connect sync error 'Sync is already running'
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException
+    + PSComputerName        : sync01
+
+# If an Azure AD sync is already in progress, a more readable error is shown
 #>
 
 param (
-    [Parameter()][Alias("ComputerName")][ValidateNotNullOrEmpty()][String]$Server = "sync01.ad1.example",
-    [Parameter()][Alias("PolicyType")][ValidateSet("Delta", "Initial")][String]$Type = "Delta",
+    [Parameter()][Alias('ComputerName')][ValidateNotNullOrEmpty()][String]$Server = 'sync01',
+    [Parameter()][Alias('PolicyType')][ValidateSet('Delta', 'Initial')][String]$Type = 'Delta',
     [Parameter(ValueFromPipelineByPropertyName)][PSCredential]$Credential
 )
 
@@ -66,12 +67,31 @@ $parameters = @{
     ComputerName = $Server
 }
 
-if ($Credential){
-    # If the 'Credential' parameter is supplied to this script, pass it to Invoke-Command
-    $parameters["Credential"]=$Credential
+if ($Credential) {
+    # If the 'Credential' parameter is supplied to this function, include it in the parameters for Invoke-Command
+    $parameters['Credential'] = $Credential
 }
 
 Invoke-Command @parameters -ScriptBlock {
     Import-Module ADSync
-    Start-ADSyncSyncCycle -PolicyType $Type 
+    try {
+        Start-ADSyncSyncCycle -PolicyType $Type -ErrorAction Stop | Out-Null
+        Write-Host ("{0}: Azure AD Connect {1} sync started" -f $Using:Server, $Using:Type) -ForegroundColor Green
+    }
+    catch {
+        switch ($_) {
+            { $_ -match 'Sync is already running' } {
+                Write-Error ("{0}: Azure AD Connect sync error 'Sync is already running'" -f $Using:Server)
+                break
+            }
+            { $_ -match 'AAD is busy' } {
+                Write-Error ("{0}: Azure AD Connect sync error 'AAD is busy', a sync is likely already in progress" -f $Using:Server)
+                break
+            }
+            Default {
+                Write-Error $_
+                Write-Error ("{0}: Failed to Azure AD Connect {1} sync" -f $Using:Server, $Using:Type)
+            }
+        }
+    }
 }
