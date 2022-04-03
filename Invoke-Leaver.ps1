@@ -494,17 +494,18 @@ function Get-GroupLicenseStatus {
 function Get-StatusObject {
     param (
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$User,
-        [Parameter(Mandatory)][ValidateSet('Skipped', 'Errored')][string]$Status,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Reason
+        [Parameter(Mandatory)][ValidateSet('Completed', 'Skipped', 'Errored')][string]$Status,
+        [Parameter()][ValidateNotNullOrEmpty()][string]$Reason
     )
     [PSCustomObject] @{
         'DisplayName'       = $User.DisplayName
         'UserPrincipalName' = $User.UserPrincipalName
-        'Status'            = 'Skipped'
+        'Status'            = $Status
         # Take the error message passed in as the 'Reason' parameter and remove the user's DisplayName from the start (if it was present)
         'Reason'            = ($Reason -replace "$($User.DisplayName): ", '')
     }
 }
+
 
 function Get-Object {
     param (
@@ -512,7 +513,7 @@ function Get-Object {
         [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Identity
     )
     $commonParameters = @{
-        Properties = 'DistinguishedName', 'Name', 'SamAccountName', 'ObjectSID'
+        Properties  = 'DistinguishedName', 'Name', 'SamAccountName', 'ObjectSID'
         ErrorAction = 'Stop'
     }
     foreach ($singleIdentity in $Identity) {
@@ -710,10 +711,10 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         [void]$actions.Add(
             @{ 'LicenseRequiredAfterConversion' = $true }
         )
-        if ($SkipLicenseCheck){
+        if ($SkipLicenseCheck) {
             Write-Host ("{0}: Skipping available license check for '{1}'" -f $user.DisplayName, $sharedMailboxLicenseGroupObject.Name)
         }
-        else{
+        else {
             :LicenseLoop while ($true) {
                 $licenseStatus = Get-GroupLicenseStatus -Group $sharedMailboxLicenseGroupObject
                 switch ($licenseStatus) {
@@ -899,7 +900,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             Break UserForeach
         }
     }
-
+    
     # Get the IDs for all groups that the user is a member of
     ## TODO Confirm if further filtering is needed for members
     $groupMemberships = Get-MgUserMemberOf -UserId $user.UserPrincipalName
@@ -970,7 +971,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     Write-Host '- Have their description overwritten'
     Write-Host '- Be removed from all Active Directory group memberships'
     Write-Host '- Be removed from all Azure AD / Office 365 group ownerships and memberships'
-
+    
     if ($azureAdUser.mySite) {
         Write-Host '- Have their OneDrive data deleted automatically in 90 days time'
         Write-Host '- Have external file sharing on their OneDrive disabled'
