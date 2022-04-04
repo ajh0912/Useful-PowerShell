@@ -1,6 +1,5 @@
 <#
 .SYNOPSIS
-v0.3
 Makes the output of Compare-Object easier to read.
 
 .DESCRIPTION
@@ -44,7 +43,7 @@ param (
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][Object]$ReferenceObject,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][String]$DifferenceName,
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][Object]$DifferenceObject,
-    [Parameter()][ValidateNotNullOrEmpty()][String]$Property = "Name"
+    [Parameter()][ValidateNotNullOrEmpty()][String]$Property = 'Name'
 )
 
 function Get-SideDescriptor {
@@ -52,17 +51,17 @@ function Get-SideDescriptor {
         [Parameter(Mandatory, ValueFromPipeline)][String]$SideIndicator
     )
     switch ($SideIndicator) {
-        "<=" {
-            "Exists only in $ReferenceName"
+        '<=' {
+            'Exists only in {0}' -f $ReferenceName
         }
-        "=>" {
-            "Exists only in $DifferenceName"
+        '=>' {
+            'Exists only in {0}' -f $DifferenceName
         }
-        default {
-            Throw "Unknown error"
+        Default {
+            Write-Error 'Unknown error'
         }
     }
 }
 
 $compareResult = Compare-Object -ReferenceObject $ReferenceObject -DifferenceObject $DifferenceObject -Property $Property
-$compareResult | Select-Object $Property, @{ Name = "Comparison Status"; Expression = { $_.SideIndicator | Get-SideDescriptor } }
+$compareResult | Select-Object $Property, @{ Name = 'Comparison Status'; Expression = { $_.SideIndicator | Get-SideDescriptor } }
