@@ -555,8 +555,15 @@ function Get-GroupLicenseStatus {
         [object]$Group
     )
     try {
+        $mgGroupParams = @{
+            Filter           = "OnPremisesSamAccountName eq '$($Group.SamAccountName)'"
+            Property         = 'DisplayName', 'AssignedLicenses'
+            ConsistencyLevel = 'eventual'
+            Count            = 'groupCount'
+            ErrorAction      = 'Stop'
+        }
         # Find the Azure AD group object that comes from the Active Directory group (via Azure AD Connect)
-        $azureAdLicenseGroup = Get-MgGroup -Filter "OnPremisesSamAccountName eq '$($Group.SamAccountName)'" -Property DisplayName, AssignedLicenses -ConsistencyLevel eventual -Count groupCount -ErrorAction Stop
+        $azureAdLicenseGroup = Get-MgGroup @mgGroupParams
         # List all licenses the tenant has
         $tenantSubscribedSkus = Get-MgSubscribedSku
         # Filter the tenant licenses down to only the SkuId that the license group has
@@ -606,7 +613,6 @@ function Get-StatusObject {
         'Reason'            = ($Reason -replace "$($User.DisplayName): ", '')
     }
 }
-
 
 function Get-Object {
     param (
@@ -981,21 +987,54 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     
     if ($manager) {
         $choiceMailHandlingParams.Options = @(
-            @{ Name = 'Forwarding'; HelpText = "Set mailbox forwarding to manager: {0}. Also set Out of Office (for internal MailTip & availability status)" -f $manager.DisplayName }
-            @{ Name = 'Out of Office'; HelpText = "Set mailbox Out of Office mentioning manager: {0}" -f $manager.DisplayName }
-            @{ Name = 'Deny inbound email'; HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)" }
-            @{ Name = 'None'; HelpText = "Don't perform any of these actions" }
-            @{ Name = 'Skip'; HelpText = 'Skip this user' }
-            @{ Name = 'Terminate'; HelpText = 'Stop all actions and end this script' }
+            @{
+                Name     = 'Forwarding';
+                HelpText = "Set mailbox forwarding to manager: {0}. Also set Out of Office (for internal MailTip & availability status)" -f $manager.DisplayName 
+            }
+            @{ 
+                Name     = 'Out of Office';
+                HelpText = "Set mailbox Out of Office mentioning manager: {0}" -f $manager.DisplayName 
+            }
+            @{ 
+                Name     = 'Deny inbound email';
+                HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)" 
+            }
+            @{ 
+                Name     = 'None'; 
+                HelpText = "Don't perform any of these actions" 
+            }
+            @{ 
+                Name     = 'Skip';
+                HelpText = 'Skip this user' 
+            }
+            @{ 
+                Name     = 'Terminate'; 
+                HelpText = 'Stop all actions and end this script' 
+            }
         )
     }
     else {
         $choiceMailHandlingParams.Options = @(
-            @{ Name = 'Out of Office'; HelpText = 'Set mailbox Out of Office' }
-            @{ Name = 'Deny inbound email'; HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)" }
-            @{ Name = 'None'; HelpText = "Don't perform any of these actions" }
-            @{ Name = 'Skip'; HelpText = 'Skip this user' }
-            @{ Name = 'Terminate'; HelpText = 'Stop all actions and end this script' }
+            @{ 
+                Name     = 'Out of Office';
+                HelpText = 'Set mailbox Out of Office' 
+            }
+            @{ 
+                Name     = 'Deny inbound email';
+                HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)" 
+            }
+            @{
+                Name     = 'None'; 
+                HelpText = "Don't perform any of these actions" 
+            }
+            @{ 
+                Name     = 'Skip';
+                HelpText = 'Skip this user' 
+            }
+            @{ 
+                Name     = 'Terminate';
+                HelpText = 'Stop all actions and end this script' 
+            }
         )
     }
     
@@ -1283,7 +1322,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     switch ($actions) {
         { $_.MailboxManagerForwarding } {
             Set-MailboxForwarding -User $user -Manager $manager
-            Write-Host ("{0}: Note when forwarding is used, Out of Office is automatically set for MailTip and availability status. No Out of Office email reply will be sent" -f $User.DisplayName) -ForegroundColor Cyan
+            Write-Host ("{0}: Note when forwarding is used, no Out of Office email reply will be sent (Out of Office is still used for availability and MailTip)." -f $User.DisplayName) -ForegroundColor Cyan
         }
         { $_.MailboxOutOfOffice } {
             Set-MailboxOutOfOffice -User $user -Manager $manager
@@ -1297,7 +1336,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             [void]$groupStatus.Add(
                 $(Set-ADGroupMembership -Action Add -User $user -Groups $denyInboundEmailGroupObject)
             )
-            Write-Host ("{0}: Note when Deny Inbound is used, Out of Office is automatically set for MailTip and availability status. No Out of Office email reply will be sent" -f $User.DisplayName) -ForegroundColor Cyan
+            Write-Host ("{0}: Note when Deny Inbound is used, no Out of Office email reply will be sent (Out of Office is still used for availability and MailTip)." -f $User.DisplayName) -ForegroundColor Cyan
         }
         { $_.MailboxManagerPermission } {
             Set-MailboxReadAndManage -User $user -Manager $manager
@@ -1350,10 +1389,26 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             'UserPrincipalName' = $user.UserPrincipalName
             'Status'            = 'Completed'
             'LicenseRequired'   = $actions.LicenseRequiredAfterConversion
-            'ADGroupsAdded'     = $groupStatus | Where-Object { ($_.Type -eq 'Active Directory') -and ($_.Relationship -eq 'Member') -and ($_.Action -eq 'Add') -and ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
-            'ADGroupsRemoved'   = $groupStatus | Where-Object { ($_.Type -eq 'Active Directory') -and ($_.Relationship -eq 'Member') -and ($_.Action -eq 'Remove') -and ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
-            'AADMemberRemoved'  = $groupStatus | Where-Object { ($_.Type -eq 'Azure AD / Microsoft 365') -and ($_.Relationship -eq 'Member') -and ($_.Action -eq 'Remove') -and ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
-            'AADOwnerRemoved'   = $groupStatus | Where-Object { ($_.Type -eq 'Azure AD / Microsoft 365') -and ($_.Relationship -eq 'Owner') -and ($_.Action -eq 'Remove') -and ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
+            'ADGroupsAdded'     = $groupStatus | Where-Object { 
+                ($_.Type -eq 'Active Directory') -and
+                ($_.Relationship -eq 'Member') -and
+                ($_.Action -eq 'Add') -and
+                ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
+            'ADGroupsRemoved'   = $groupStatus | Where-Object {
+                ($_.Type -eq 'Active Directory') -and
+                ($_.Relationship -eq 'Member') -and
+                ($_.Action -eq 'Remove') -and
+                ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
+            'AADMemberRemoved'  = $groupStatus | Where-Object {
+                ($_.Type -eq 'Azure AD / Microsoft 365') -and
+                ($_.Relationship -eq 'Member') -and
+                ($_.Action -eq 'Remove') -and
+                ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
+            'AADOwnerRemoved'   = $groupStatus | Where-Object {
+                ($_.Type -eq 'Azure AD / Microsoft 365') -and
+                ($_.Relationship -eq 'Owner') -and
+                ($_.Action -eq 'Remove') -and
+                ($_.Status -eq 'Success') } | Measure-Object | Select-Object -ExpandProperty Count
         }
     )
 }
