@@ -55,6 +55,13 @@ On-Premises Microsoft Exchange Server.
 .PARAMETER AzureAdSyncServer
 The server running Azure AD Connect.
 
+.PARAMETER NoExchangeOnPremises
+Assume no On-Premises Exchange Server is used in this hybrid environment.
+Note that Microsoft states this is an unsupported configuration.
+
+.PARAMETER SkipLicenseCheck
+Do not check for available licenses, for users who still need a license after conversion to shared mailbox.
+
 .INPUTS
 None. You cannot pipe objects to Invoke-Leaver.ps1.
 
@@ -80,16 +87,35 @@ Should manager 'Example Manager' be granted OneDrive permission?
 [Y] Yes  [N] No  [T] Terminate  [?] Help (default is "Y"):
 ...
 #>
-
+[CmdletBinding(DefaultParameterSetName = "default")]
 param (
-    [Parameter()][ValidateNotNullOrEmpty()][String]$LeaverOU = 'Leavers',
-    [Parameter()][ValidateNotNullOrEmpty()][String]$LeaverSharedMailboxOU = 'Leavers - Shared Mailboxes',
-    [Parameter()][ValidateNotNullOrEmpty()][array]$GroupExclusionOUs = ('Group Writeback', 'Symbolic Groups'),
-    [Parameter()][ValidateNotNullOrEmpty()][String]$DenyInboundEmailGroup = 'Deny Inbound Email',
-    [Parameter()][ValidateNotNullOrEmpty()][String]$SharedMailboxLicenseGroup = 'Exchange Online (Plan 2)',
-    [Parameter()][ValidateNotNullOrEmpty()][String]$ExchangeServer = 'exc01',
-    [Parameter()][Alias('AADSync')][ValidateNotNullOrEmpty()][String]$AzureAdSyncServer = 'sync01',
-    [Parameter()][switch]$SkipLicenseCheck
+    [ValidateNotNullOrEmpty()]
+    [String]$LeaverOU = 'Leavers',
+    
+    [ValidateNotNullOrEmpty()]
+    [String]$LeaverSharedMailboxOU = 'Leavers - Shared Mailboxes',
+    
+    [ValidateNotNullOrEmpty()]
+    [array]$GroupExclusionOUs = ('Group Writeback', 'Symbolic Groups'),
+    
+    [ValidateNotNullOrEmpty()]
+    [String]$DenyInboundEmailGroup = 'Deny Inbound Email',
+    
+    [ValidateNotNullOrEmpty()]
+    [String]$SharedMailboxLicenseGroup = 'Exchange Online (Plan 2)',
+    
+    [Parameter(ParameterSetName = 'ExchangeOnPrem')]
+    [ValidateNotNullOrEmpty()]
+    [String]$ExchangeServer = 'exc01',
+    
+    [Alias('AADSync')]
+    [ValidateNotNullOrEmpty()]
+    [String]$AzureAdSyncServer = 'sync01',
+    
+    [switch]$SkipLicenseCheck,
+    
+    [Parameter(ParameterSetName = 'NoExchangeOnPrem')]
+    [switch]$NoExchangeOnPremises
 )
 
 function Start-ExchangeOnlineSession {
@@ -105,7 +131,9 @@ function Start-ExchangeOnlineSession {
 
 function Start-ExchangeOnPremisesSession {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][String]$Server
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [String]$Server
     )
     if (Get-PSSession | Where-Object { ($_.State -eq 'Opened') -and $_.ComputerName -match "$Server" }) {
         Write-Host "An Exchange On-Premises PowerShell session to '$Server' is already active" -ForegroundColor Green
@@ -121,7 +149,9 @@ function Start-ExchangeOnPremisesSession {
 
 function Start-SharePointOnlineSession {
     param (
-        [Parameter(Mandatory)][ValidatePattern('^https:\/\/[a-z,A-Z,0-9]*-admin\.sharepoint\.com$')][String]$Url
+        [Parameter(Mandatory)]
+        [ValidatePattern('^https:\/\/[a-z,A-Z,0-9]*-admin\.sharepoint\.com$')]
+        [String]$Url
     )
     try {
         Get-SPOSite -Identity $Url -ErrorAction Stop | Out-Null
@@ -136,8 +166,10 @@ function Start-SharePointOnlineSession {
 
 function Resolve-LicensePlan {
     param (
-        [Parameter()][ValidateSet('Mailbox')][string]$Type,
-        [Parameter()][System.Object]$AssignedPlans
+        [ValidateSet('Mailbox')]
+        [string]$Type,
+        
+        [System.Object]$AssignedPlans
     )
     # Minimum license service plan a user must have to count as entitled to a mailbox for our purposes
     # Licenses like Microsoft 365 E3, Office 365 E1, Office 365 Business Premium all contain one of these - or bought standalone
@@ -170,9 +202,17 @@ function Get-RandomPassword {
 
 function Start-AzureAdSync {
     param (
-        [Parameter(Mandatory)][Alias('ComputerName')][ValidateNotNullOrEmpty()][String]$Server,
-        [Parameter()][Alias('PolicyType')][ValidateSet('Delta', 'Initial')][String]$Type = 'Delta',
-        [Parameter(ValueFromPipelineByPropertyName)][PSCredential]$Credential
+        [Parameter(Mandatory)]
+        [Alias('ComputerName')]
+        [ValidateNotNullOrEmpty()]
+        [String]$Server,
+        
+        [Alias('PolicyType')]
+        [ValidateSet('Delta', 'Initial')]
+        [String]$Type = 'Delta',
+        
+        [Parameter(ValueFromPipelineByPropertyName)]
+        [PSCredential]$Credential
     )
     $parameters = @{
         ComputerName = $Server
@@ -214,10 +254,18 @@ $standardOptions = @(
 
 function Read-UserChoice {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Title,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Message,
-        [Parameter()][int]$Default = 0,
-        [Parameter()][ValidateNotNullOrEmpty()][array]$Options = $standardOptions
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Title,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Message,
+        
+        [int]$Default = 0,
+        
+        [ValidateNotNullOrEmpty()]
+        [array]$Options = $standardOptions
     )
     # Build the individual choices and help text from the $Options variable
     $choices = $Options | ForEach-Object {
@@ -233,8 +281,11 @@ function Read-UserChoice {
 
 function Set-MailboxOutOfOffice {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$User,
-        [Parameter()][object]$Manager
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$User,
+        
+        [object]$Manager
     )
     try {
         $messageWithManager = "{0} is no longer with {1}, please contact {2} ({3})." -f $User.DisplayName, $User.Company, $Manager.DisplayName, $Manager.EmailAddress
@@ -263,8 +314,13 @@ function Set-MailboxOutOfOffice {
 
 function Set-MailboxForwarding {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$User,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$Manager
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$User,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$Manager
     )
     try {
         Set-Mailbox -Identity $User.UserPrincipalName -DeliverToMailboxAndForward $false -ForwardingSMTPAddress $Manager.EmailAddress
@@ -277,8 +333,13 @@ function Set-MailboxForwarding {
 
 function Set-MailboxReadAndManage {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$User,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$Manager
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$User,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$Manager
     )
     try {
         Add-MailboxPermission -Identity $User.UserPrincipalName -User $Manager.UserPrincipalName -AccessRights FullAccess | Out-Null
@@ -291,8 +352,13 @@ function Set-MailboxReadAndManage {
 
 function Add-OneDriveSiteAdmin {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$AzureAdUser,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$Manager
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$AzureAdUser,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$Manager
     )
     try {
         Set-SPOUser -Site $AzureAdUser.mySite -LoginName $Manager.UserPrincipalName -IsSiteCollectionAdmin $true -ErrorAction Stop | Out-Null
@@ -307,7 +373,9 @@ function Add-OneDriveSiteAdmin {
 
 function Disable-OneDriveExternalSharing {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$AzureAdUser
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$AzureAdUser
     )
     try {
         # Remove the trailing '/' from the mySite URL, otherwise we get the error 'The managed path ... is not a managed path in this tenant.'
@@ -322,9 +390,17 @@ function Disable-OneDriveExternalSharing {
 
 function Set-ADGroupMembership {
     param (
-        [Parameter(Mandatory)][ValidateSet('Add', 'Remove')][string]$Action,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$User,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$Groups
+        [Parameter(Mandatory)]
+        [ValidateSet('Add', 'Remove')]
+        [string]$Action,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$User,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$Groups
     )
     foreach ($group in $Groups) {
         $status = $null
@@ -356,9 +432,16 @@ function Set-ADGroupMembership {
 
 function Add-AzureADManagerOwnership {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$AzureAdUser,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$Manager,
-        [Parameter(Mandatory)][object]$Groups
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$AzureAdUser,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$Manager,
+        
+        [Parameter(Mandatory)]
+        [object]$Groups
     )
     foreach ($group in $Groups) {
         try {
@@ -377,9 +460,13 @@ function Add-AzureADManagerOwnership {
 
 function Remove-AzureADMembership {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$AzureAdUser,
-        [Parameter()][object]$Member,
-        [Parameter()][object]$Owner
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$AzureAdUser,
+        
+        [object]$Member,
+        
+        [object]$Owner
     )
     foreach ($group in $Member) {
         $status = $null
@@ -428,8 +515,13 @@ function Remove-AzureADMembership {
 
 function Test-AzureADgroupLoneOwner {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object[]]$Groups,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$AzureAdUser
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object[]]$Groups,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$AzureAdUser
     )
     foreach ($group in $Groups) {
         $status = $null
@@ -458,7 +550,9 @@ function Test-AzureADgroupLoneOwner {
 
 function Get-GroupLicenseStatus {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$Group
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$Group
     )
     try {
         # Find the Azure AD group object that comes from the Active Directory group (via Azure AD Connect)
@@ -493,9 +587,16 @@ function Get-GroupLicenseStatus {
 
 function Get-StatusObject {
     param (
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][object]$User,
-        [Parameter(Mandatory)][ValidateSet('Completed', 'Skipped', 'Errored')][string]$Status,
-        [Parameter()][ValidateNotNullOrEmpty()][string]$Reason
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [object]$User,
+        
+        [Parameter(Mandatory)]
+        [ValidateSet('Completed', 'Skipped', 'Errored')]
+        [string]$Status,
+        
+        [ValidateNotNullOrEmpty()]
+        [string]$Reason
     )
     [PSCustomObject] @{
         'DisplayName'       = $User.DisplayName
@@ -509,8 +610,13 @@ function Get-StatusObject {
 
 function Get-Object {
     param (
-        [Parameter(Mandatory)][ValidateSet('Group', 'OrganizationalUnit')][string]$Type,
-        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][array]$Identity
+        [Parameter(Mandatory)]
+        [ValidateSet('Group', 'OrganizationalUnit')]
+        [string]$Type,
+        
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [array]$Identity
     )
     $commonParameters = @{
         Properties  = 'DistinguishedName', 'Name', 'SamAccountName', 'ObjectSID'
@@ -558,8 +664,11 @@ function Get-Object {
 # https://docs.microsoft.com/en-us/powershell/module/microsoft.graph.groups
 # https://docs.microsoft.com/en-us/powershell/module/microsoft.graph.identity.directorymanagement
 Import-Module -Name Microsoft.Graph.Users, Microsoft.Graph.Groups, Microsoft.Graph.Identity.DirectoryManagement -ErrorAction Stop
-# https://docs.microsoft.com/en-us/powershell/module/exchange
-Import-Module -Name ExchangeOnlineManagement -ErrorAction Stop
+if (-not $NoExchangeOnPremises) {
+    # Run when using Exchange On-Premises
+    # https://docs.microsoft.com/en-us/powershell/module/exchange
+    Import-Module -Name ExchangeOnlineManagement -ErrorAction Stop
+}
 # https://docs.microsoft.com/en-us/powershell/module/sharepoint-online
 Import-Module -Name Microsoft.Online.SharePoint.PowerShell -ErrorAction Stop -WarningAction SilentlyContinue
 # https://docs.microsoft.com/en-us/powershell/module/activedirectory
@@ -569,9 +678,12 @@ Import-Module -Name ActiveDirectory -ErrorAction Stop
 Write-Host (Connect-MgGraph -Scopes User.ReadWrite.All, Group.ReadWrite.All, Directory.Read.All -ErrorAction Stop)
 # Start the session for Exchange Online (interactive modern auth prompt)
 Start-ExchangeOnlineSession
-# Start the session with Exchange On-Premises (authentication from your PowerShell session with Kerberos or basic auth)
-# Note that all cmdlets from Exchange On-Premises will be prefixed with 'OnPremises' to allow easy distinguishing between On-Premises and Exchange Online
-Start-ExchangeOnPremisesSession -Server $ExchangeServer
+if (-not $NoExchangeOnPremises) {
+    # Run when using Exchange On-Premises
+    # Start the session with Exchange On-Premises (authentication from your PowerShell session with Kerberos or basic auth)
+    # Note that all cmdlets from Exchange On-Premises will be prefixed with 'OnPremises' to allow easy distinguishing between On-Premises and Exchange Online
+    Start-ExchangeOnPremisesSession -Server $ExchangeServer
+}
 
 # Get the current tenant's root SharePoint site, then take the WebUrl and add '-admin' after the tenant name
 # Note that this does not work with the legacy 'Vanity SharePoint Domain' feature from BPOS-D / Office 365 Dedicated, eg. sharepoint.contoso.com rather than contoso.sharepoint.com
@@ -641,32 +753,35 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         Continue UserForeach
     }
     
-    try {
-        $remoteMailbox = Get-OnPremisesRemoteMailbox -Identity $user.UserPrincipalName -ErrorAction Stop
-    }
-    catch {
-        $errorMessage = "{0}: No mailbox known by '{1}'" -f $user.DisplayName, $ExchangeServer
-        Write-Error $errorMessage
-        # Add the current user to $userStatus with the status of Skipped
-        [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
-        )
-        # Skip the current user in the foreach loop if this 'catch' condition is met
-        Continue UserForeach
-    }
-    
-    if ($remoteMailbox.RecipientTypeDetails -eq 'RemoteUserMailbox') {
-        Write-Host ("{0}: Valid remote user mailbox" -f $user.DisplayName) -ForegroundColor Green
-    }
-    else {
-        $errorMessage = "{0}: No valid remote user mailbox. Expected 'RemoteUserMailbox' got '{1}'" -f $user.DisplayName, $remoteMailbox.RecipientTypeDetails
-        Write-Error $errorMessage
-        # Add the current user to $userStatus with the status of Skipped
-        [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
-        )
-        # Skip the current user in the foreach loop if this 'else' condition is met
-        Continue UserForeach
+    if (-not $NoExchangeOnPremises) {
+        # Run when using Exchange On-Premises
+        try {
+            $remoteMailbox = Get-OnPremisesRemoteMailbox -Identity $user.UserPrincipalName -ErrorAction Stop
+        }
+        catch {
+            $errorMessage = "{0}: No mailbox known by '{1}'" -f $user.DisplayName, $ExchangeServer
+            Write-Error $errorMessage
+            # Add the current user to $userStatus with the status of Skipped
+            [void]$userStatus.Add(
+                $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
+            )
+            # Skip the current user in the foreach loop if this 'catch' condition is met
+            Continue UserForeach
+        }
+        
+        if ($remoteMailbox.RecipientTypeDetails -eq 'RemoteUserMailbox') {
+            Write-Host ("{0}: Valid remote user mailbox" -f $user.DisplayName) -ForegroundColor Green
+        }
+        else {
+            $errorMessage = "{0}: No valid remote user mailbox. Expected 'RemoteUserMailbox' got '{1}'" -f $user.DisplayName, $remoteMailbox.RecipientTypeDetails
+            Write-Error $errorMessage
+            # Add the current user to $userStatus with the status of Skipped
+            [void]$userStatus.Add(
+                $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
+            )
+            # Skip the current user in the foreach loop if this 'else' condition is met
+            Continue UserForeach
+        }
     }
     
     if (Resolve-LicensePlan -Type Mailbox -AssignedPlans $azureAdUser.assignedPlans) {
@@ -686,8 +801,24 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     try {
         # Get the Exchange Online mailbox object of the current user
         $exoMailbox = Get-EXOMailbox -Identity $user.UserPrincipalName -PropertySets Minimum, Archive -ErrorAction Stop
+        
+        if ($exoMailbox.RecipientTypeDetails -eq 'UserMailbox') {
+            Write-Host ("{0}: Valid Exchange Online mailbox" -f $user.DisplayName) -ForegroundColor Green
+        }
+        else {
+            $errorMessage = "{0}: No valid Exchange Online mailbox. Expected 'UserMailbox' got '{1}'" -f $user.DisplayName, $exoMailbox.RecipientTypeDetails
+            Write-Error $errorMessage
+            # Add the current user to $userStatus with the status of Skipped
+            [void]$userStatus.Add(
+                $(Get-StatusObject -User $User -Status Skipped -Reason $errorMessage)
+            )
+            # Skip the current user in the foreach loop if this 'else' condition is met
+            Continue UserForeach
+        }
+        
         # Get the Exchange Online mailbox statistics and take the value sub-property from TotalItemSize
         $exoMailboxSize = ($exoMailbox | Get-EXOMailboxStatistics -ErrorAction Stop).TotalItemSize.Value
+
     }
     catch {
         Write-Error $_
@@ -1068,33 +1199,37 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         Continue UserForeach
     }
     
-    try {
-        # Tells Exchange On-Premises that the user should be turned into a remote shared mailbox (these values are stored in Active Directory)
-        # Note that if a mailbox returns the 'RemoteRecipientType' containing 'ProvisionMailbox' from Get-OnPremisesRemoteMailbox
-        # Then the mailbox would be converted into a shared mailbox in Exchange Online on the next Azure AD Connect sync automatically
-        # This behaviour doesn't happen for 'Migrated', and for some edge cases
-        # To account for this we run both 'Set-OnPremisesRemoteMailbox -Type Shared' and 'Set-Mailbox -Type Shared' to set it on both ends
-        Set-OnPremisesRemoteMailbox -Identity $user.UserPrincipalName -Type Shared -ErrorAction Stop
-        Write-Host ("{0}: Set remote mailbox type to shared in Exchange On-Premises / Active Directory" -f $user.DisplayName) -ForegroundColor Green
-    }
-    catch {
-        Write-Error $_
-        $errorMessage = "{0}: Failed to set remote mailbox type to shared in Exchange On-Premises / Active Directory - skipping all further actions" -f $user.DisplayName
-        Write-Error $errorMessage
-        # Add the current user to $userStatus with the status of Errored
-        [void]$userStatus.Add(
-            $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
-        )
-        # Skip the current user in the foreach loop if this 'catch' condition is met
-        Continue UserForeach
+    if (-not $NoExchangeOnPremises) {
+        # Run when using Exchange On-Premises
+        try {
+            # Tells Exchange On-Premises that the user should be turned into a remote shared mailbox (these values are stored in Active Directory)
+            # Note that if a mailbox returns the 'RemoteRecipientType' containing 'ProvisionMailbox' from Get-OnPremisesRemoteMailbox
+            # Then the mailbox would be converted into a shared mailbox in Exchange Online on the next Azure AD Connect sync automatically
+            # This behaviour doesn't happen for 'Migrated', and for some edge cases
+            # To account for this we run both 'Set-OnPremisesRemoteMailbox -Type Shared' and 'Set-Mailbox -Type Shared' to set it on both ends
+            Set-OnPremisesRemoteMailbox -Identity $user.UserPrincipalName -Type Shared -ErrorAction Stop
+            Write-Host ("{0}: Set remote mailbox type to shared in Exchange On-Premises / Active Directory" -f $user.DisplayName) -ForegroundColor Green
+        }
+        catch {
+            Write-Error $_
+            $errorMessage = "{0}: Failed to set remote mailbox type to shared in Exchange On-Premises / Active Directory - skipping all further actions" -f $user.DisplayName
+            Write-Error $errorMessage
+            # Add the current user to $userStatus with the status of Errored
+            [void]$userStatus.Add(
+                $(Get-StatusObject -User $User -Status Errored -Reason $errorMessage)
+            )
+            # Skip the current user in the foreach loop if this 'catch' condition is met
+            Continue UserForeach
+        }
     }
     
     try {
         # Tells Exchange Online that the user should be turned into a shared mailbox
-        # Performing this now also means we can remove the user's license as a part of the main loop
+        # For users that we've set to shared via Set-OnPremisesRemoteMailbox,
+        # performing this Exchange Online command now also means we can remove the user's license as a part of the main loop
         # Although with group-based licensing sourced from a group in Active Directory, the license will only be removed on the next Azure AD Connect sync
         Set-Mailbox -Identity $user.UserPrincipalName -Type Shared -ErrorAction Stop
-        Write-Host ("{0}: Set remote mailbox type to shared in Exchange Online" -f $user.DisplayName) -ForegroundColor Green
+        Write-Host ("{0}: Set mailbox type to shared in Exchange Online" -f $user.DisplayName) -ForegroundColor Green
     }
     catch {
         Write-Error $_
