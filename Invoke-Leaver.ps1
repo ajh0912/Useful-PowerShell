@@ -247,9 +247,18 @@ function Start-AzureAdSync {
 }
 
 $standardOptions = @(
-    @{ Name = 'Yes'; HelpText = 'Perform this action' } # Default Option
-    @{ Name = 'No'; HelpText = 'Skip this action' }
-    @{ Name = 'Terminate'; HelpText = 'Stop all actions and end this script' }
+    @{
+        Name     = 'Yes'
+        HelpText = 'Perform this action'
+    } # Default Option
+    @{
+        Name     = 'No'
+        HelpText = 'Skip this action'
+    }
+    @{
+        Name     = 'Terminate'
+        HelpText = 'Stop all actions and end this script'
+    }
 )
 
 function Read-UserChoice {
@@ -860,8 +869,14 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
                             Title   = "{0}: No '{1}' license free" -f $user.DisplayName, $sharedMailboxLicenseGroupObject.Name
                             Message = "User requires a {0} license, but there are no remaining licenses free" -f $sharedMailboxLicenseGroupObject.Name
                             Options = @(
-                                @{ Name = 'Retry'; HelpText = 'Check available licenses again, for example after freeing up a license or adding more' } # Default Option
-                                @{ Name = 'Skip'; HelpText = 'Skip the current user and do not perform any actions on them' }
+                                @{
+                                    Name     = 'Retry'
+                                    HelpText = 'Check available licenses again, for example after freeing up a license or adding more'
+                                } # Default Option
+                                @{
+                                    Name     = 'Skip'
+                                    HelpText = 'Skip the current user and do not perform any actions on them'
+                                }
                             )
                         }
                         switch (Read-UserChoice @choiceLicenseIssueParams) {
@@ -989,52 +1004,52 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     if ($manager) {
         $choiceMailHandlingParams.Options = @(
             @{
-                Name     = 'Forwarding';
-                HelpText = "Set mailbox forwarding to manager: {0}. Also set Out of Office (for internal MailTip & availability status)" -f $manager.DisplayName 
+                Name     = 'Forwarding'
+                HelpText = "Set mailbox forwarding to manager: {0}. Also set Out of Office (for internal MailTip & availability status)" -f $manager.DisplayName
             }
-            @{ 
-                Name     = 'Out of Office';
-                HelpText = "Set mailbox Out of Office mentioning manager: {0}" -f $manager.DisplayName 
+            @{
+                Name     = 'Out of Office'
+                HelpText = "Set mailbox Out of Office mentioning manager: {0}" -f $manager.DisplayName
             }
-            @{ 
-                Name     = 'Deny inbound email';
-                HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)" 
+            @{
+                Name     = 'Deny inbound email'
+                HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)"
             }
-            @{ 
-                Name     = 'None'; 
-                HelpText = "Don't perform any of these actions" 
+            @{
+                Name     = 'None'
+                HelpText = "Don't perform any of these actions"
             }
-            @{ 
-                Name     = 'Skip';
-                HelpText = 'Skip this user' 
+            @{
+                Name     = 'Skip'
+                HelpText = 'Skip this user'
             }
-            @{ 
-                Name     = 'Terminate'; 
-                HelpText = 'Stop all actions and end this script' 
+            @{
+                Name     = 'Terminate'
+                HelpText = 'Stop all actions and end this script'
             }
         )
     }
     else {
         $choiceMailHandlingParams.Options = @(
-            @{ 
-                Name     = 'Out of Office';
-                HelpText = 'Set mailbox Out of Office' 
-            }
-            @{ 
-                Name     = 'Deny inbound email';
-                HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)" 
+            @{
+                Name     = 'Out of Office'
+                HelpText = 'Set mailbox Out of Office'
             }
             @{
-                Name     = 'None'; 
-                HelpText = "Don't perform any of these actions" 
+                Name     = 'Deny inbound email'
+                HelpText = "Reject all inbound (external or internal) emails. Rejection Message: 'Your message couldn't be delivered'. Also set Out of Office (for internal MailTip & availability status)"
             }
-            @{ 
-                Name     = 'Skip';
-                HelpText = 'Skip this user' 
+            @{
+                Name     = 'None'
+                HelpText = "Don't perform any of these actions"
             }
-            @{ 
-                Name     = 'Terminate';
-                HelpText = 'Stop all actions and end this script' 
+            @{
+                Name     = 'Skip'
+                HelpText = 'Skip this user'
+            }
+            @{
+                Name     = 'Terminate'
+                HelpText = 'Stop all actions and end this script'
             }
         )
     }
@@ -1098,23 +1113,44 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             if ($groupLoneOwner -and (-not $groupCoOwner)) {
                 # If the user was a lone owner of at least one group, and a co-owner of none
                 $choiceOnlyGroupOwnerParams.Options = @(
-                    @{ Name = 'Lone ownerships'; HelpText = "For groups the user was the only (lone) owner of, replace them with their manager '{0}'" -f $manager.DisplayName } # Default Option
-                    @{ Name = 'None'; HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of. Note that errors will occur for lone owner groups" -f $manager.DisplayName }
+                    @{
+                        Name     = 'Lone ownerships'
+                        HelpText = "For groups the user was the only (lone) owner of, replace them with their manager '{0}'" -f $manager.DisplayName
+                    } # Default Option
+                    @{
+                        Name     = 'None'
+                        HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of. Note that errors will occur for lone owner groups" -f $manager.DisplayName
+                    }
                 )
             }
             if ($groupCoOwner -and (-not $groupLoneOwner)) {
                 # If the user was a co-owner of at least one group, and a lone owner of none
                 $choiceOnlyGroupOwnerParams.Options = @(
-                    @{ Name = 'None'; HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of" -f $manager.DisplayName } # Default Option
-                    @{ Name = 'All ownerships'; HelpText = "For groups the user was an owner of, replace them with their manager '{0}'" -f $manager.DisplayName }
+                    @{
+                        Name     = 'None'
+                        HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of" -f $manager.DisplayName
+                    } # Default Option
+                    @{
+                        Name     = 'All ownerships'
+                        HelpText = "For groups the user was an owner of, replace them with their manager '{0}'" -f $manager.DisplayName
+                    }
                 )
             }
             if ($groupLoneOwner -and $groupCoOwner) {
                 # If the user was a lone owner of at least one group and a co-owner of at least one group
                 $choiceOnlyGroupOwnerParams.Options = @(
-                    @{ Name = 'Lone ownerships'; HelpText = "For groups the user was the only (lone) owner of, replace them with their manager '{0}'" -f $manager.DisplayName } # Default Option
-                    @{ Name = 'All ownerships'; HelpText = "For groups the user was an owner of, replace them with their manager '{0}'" -f $manager.DisplayName }
-                    @{ Name = 'None'; HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of. Note that errors will occur for lone owner groups" -f $manager.DisplayName }
+                    @{
+                        Name     = 'Lone ownerships'
+                        HelpText = "For groups the user was the only (lone) owner of, replace them with their manager '{0}'" -f $manager.DisplayName
+                    } # Default Option
+                    @{
+                        Name     = 'All ownerships'
+                        HelpText = "For groups the user was an owner of, replace them with their manager '{0}'" -f $manager.DisplayName
+                    }
+                    @{
+                        Name     = 'None'
+                        HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of. Note that errors will occur for lone owner groups" -f $manager.DisplayName
+                    }
                 )
             }
             
@@ -1390,7 +1426,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             'UserPrincipalName' = $user.UserPrincipalName
             'Status'            = 'Completed'
             'LicenseRequired'   = $actions.LicenseRequiredAfterConversion
-            'ADGroupsAdded'     = $groupStatus | Where-Object { 
+            'ADGroupsAdded'     = $groupStatus | Where-Object {
                 ($_.Type -eq 'Active Directory') -and
                 ($_.Relationship -eq 'Member') -and
                 ($_.Action -eq 'Add') -and
