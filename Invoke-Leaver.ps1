@@ -231,11 +231,11 @@ function Start-AzureAdSync {
             switch ($_) {
                 { $_ -match 'Sync is already running' } {
                     Write-Error ("{0}: Azure AD Connect sync error 'Sync is already running'" -f $Using:Server)
-                    break
+                    Break
                 }
                 { $_ -match 'AAD is busy' } {
                     Write-Error ("{0}: Azure AD Connect sync error 'AAD is busy', a sync is likely already in progress" -f $Using:Server)
-                    break
+                    Break
                 }
                 Default {
                     Write-Error $_
@@ -551,8 +551,9 @@ function Test-AzureADgroupLoneOwner {
         }
         # Output a PSCustomObject to the pipeline containing the owner status of the current group in the loop
         [PSCustomObject] @{
-            'Group'     = $Group
-            'OnlyOwner' = $status
+            'Group'      = $Group
+            'OwnerCount' = $groupOwners.Count
+            'OnlyOwner'  = $status
         }
     }
 }
@@ -660,16 +661,16 @@ function Get-Object {
         switch ($resultsCount) {
             { $_ -eq 0 } {
                 Write-Error ("Could not find a {0} with Identity '{1}'" -f $Type, $singleIdentity) -ErrorAction Stop
-                break
+                Break
             }
             { $_ -eq 1 } {
                 $results
-                break
+                Break
             }
             { $_ -gt 1 } {
                 # If more than one object was returned from our Get-ADGroup command
                 Write-Error ("Too many {0} objects returned ({1}) matching Identity '{2}', max 1" -f $Type, $resultsCount, $singleIdentity) -ErrorAction Stop
-                break
+                Break
             }
         }
     }
@@ -880,7 +881,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
                             )
                         }
                         switch (Read-UserChoice @choiceLicenseIssueParams) {
-                            'Retry' { break }
+                            'Retry' { Break }
                             'Skip' {
                                 Write-Host ("{0}: Skipping user without performing changes" -f $user.DisplayName)
                                 # Add the current user to $userStatus with the status of Skipped. Add a specific Reason
@@ -890,7 +891,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
                                 Continue UserForeach
                             }
                         }
-                        break
+                        Break
                     }
                     { $_.UnassignedUnits -eq 1 } {
                         Write-Host ("{0}: Warning, only 1 '{1}' license free" -f $user.DisplayName, $sharedMailboxLicenseGroupObject.Name) -ForegroundColor Yellow
@@ -941,7 +942,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         }
         
         switch (Read-UserChoice @choiceManagerParams) {
-            'Yes' { break }
+            'Yes' { Break }
             'No' {
                 Write-Host ("{0}: Skipping user without performing changes" -f $user.DisplayName)
                 # Add the current user to $userStatus with the status of Skipped. Add a specific Reason
@@ -968,7 +969,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
                         @{ 'OneDriveManagerPermission' = $true }
                     )
                 }
-                'No' { break }
+                'No' { Break }
                 'Terminate' {
                     Break UserForeach
                 }
@@ -989,7 +990,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
                     @{ 'MailboxManagerPermission' = $true }
                 )
             }
-            'No' { break }
+            'No' { Break }
             'Terminate' {
                 Break UserForeach
             }
@@ -1059,21 +1060,21 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
             [void]$actions.Add(
                 @{ 'MailboxManagerForwarding' = $true; 'MailboxOutOfOffice' = $true }
             )
-            break
+            Break
         }
         'Out of Office' {
             [void]$actions.Add(
                 @{ 'MailboxOutOfOffice' = $true }
             )
-            break
+            Break
         }
         'Deny inbound email' {
             [void]$actions.Add(
                 @{ 'MailboxDenyInbound' = $true; 'MailboxOutOfOffice' = $true }
             )
-            break
+            Break
         }
-        'None' { break }
+        'None' { Break }
         'Skip' {
             Write-Host ("{0}: Skipping user without performing changes" -f $user.DisplayName)
             # Add the current user to $userStatus with the status of Skipped. Add a specific Reason
@@ -1110,64 +1111,71 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
                 Title   = "{0}: User is the lone owner of {1} group(s), and a co-owner of {2} groups." -f $user.DisplayName, ($groupLoneOwner | Measure-Object).Count, ($groupCoOwner | Measure-Object).Count
                 Message = "Should the user's manager '{0}' replace the user for group ownerships?" -f $manager.DisplayName
             }
+            $nonePrompt = @{
+                Name     = 'None'
+                HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of" -f $manager.DisplayName
+            }
+            $lonePrompt = @{
+                Name     = 'Lone ownerships'
+                HelpText = "For groups the user was the only (lone) owner of, replace them with their manager '{0}'" -f $manager.DisplayName
+            }
+            $allPrompt = @{
+                Name     = 'All ownerships'
+                HelpText = "For groups the user was an owner of, replace them with their manager '{0}'" -f $manager.DisplayName
+            }
+            $showPrompt = @{
+                Name     = 'Show'
+                HelpText = "Show all groups the user was a member of"
+            }
+            
             if ($groupLoneOwner -and (-not $groupCoOwner)) {
                 # If the user was a lone owner of at least one group, and a co-owner of none
                 $choiceOnlyGroupOwnerParams.Options = @(
-                    @{
-                        Name     = 'Lone ownerships'
-                        HelpText = "For groups the user was the only (lone) owner of, replace them with their manager '{0}'" -f $manager.DisplayName
-                    } # Default Option
-                    @{
-                        Name     = 'None'
-                        HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of. Note that errors will occur for lone owner groups" -f $manager.DisplayName
-                    }
+                    $lonePrompt; $nonePrompt; $showPrompt
                 )
             }
             if ($groupCoOwner -and (-not $groupLoneOwner)) {
                 # If the user was a co-owner of at least one group, and a lone owner of none
                 $choiceOnlyGroupOwnerParams.Options = @(
-                    @{
-                        Name     = 'None'
-                        HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of" -f $manager.DisplayName
-                    } # Default Option
-                    @{
-                        Name     = 'All ownerships'
-                        HelpText = "For groups the user was an owner of, replace them with their manager '{0}'" -f $manager.DisplayName
-                    }
+                    $nonePrompt; $allPrompt; $showPrompt
                 )
             }
             if ($groupLoneOwner -and $groupCoOwner) {
                 # If the user was a lone owner of at least one group and a co-owner of at least one group
                 $choiceOnlyGroupOwnerParams.Options = @(
-                    @{
-                        Name     = 'Lone ownerships'
-                        HelpText = "For groups the user was the only (lone) owner of, replace them with their manager '{0}'" -f $manager.DisplayName
-                    } # Default Option
-                    @{
-                        Name     = 'All ownerships'
-                        HelpText = "For groups the user was an owner of, replace them with their manager '{0}'" -f $manager.DisplayName
-                    }
-                    @{
-                        Name     = 'None'
-                        HelpText = "Do not add the user's manager '{0}' to any groups the user was an owner of. Note that errors will occur for lone owner groups" -f $manager.DisplayName
-                    }
+                    $lonePrompt; $allPrompt; $nonePrompt; $showPrompt;
                 )
             }
             
-            switch (Read-UserChoice @choiceOnlyGroupOwnerParams) {
-                'Lone ownerships' {
-                    [void]$actions.Add(
-                        @{ 'ReplaceOwnerWithManager' = 'Lone' }
-                    )
-                    break
+            :GroupPrompt while ($true) {
+                switch (Read-UserChoice @choiceOnlyGroupOwnerParams) {
+                    'Lone ownerships' {
+                        [void]$actions.Add(
+                            @{ 'ReplaceOwnerWithManager' = 'Lone' }
+                        )
+                        Break GroupPrompt
+                    }
+                    'All ownerships' {
+                        [void]$actions.Add(
+                            @{ 'ReplaceOwnerWithManager' = 'All' }
+                        )
+                        Break GroupPrompt
+                    }
+                    'None' { Break GroupPrompt }
+                    'Show' {
+                        $azureAdGroupOwnerships | ForEach-Object {
+                            $group = $_
+                            [PSCustomObject]@{
+                                DisplayName = $_.DisplayName
+                                Description = $_.Description
+                                GroupTypes  = $_.GroupTypes
+                                OwnerCount  = ($groupOwnerResults | Where-Object { $_.Group.Id -eq $group.Id }).OwnerCount
+                                OnlyOwner   = ($groupOwnerResults | Where-Object { $_.Group.Id -eq $group.Id }).OnlyOwner
+                            }
+                        } | Format-Table -AutoSize
+                        Continue GroupPrompt
+                    }
                 }
-                'All ownerships' {
-                    [void]$actions.Add(
-                        @{ 'ReplaceOwnerWithManager' = 'All' }
-                    )
-                    break
-                }
-                'None' { break }
             }
         }
     }
@@ -1227,7 +1235,7 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
     }
     
     switch (Read-UserChoice @choiceConversionParams) {
-        'Yes' { break }
+        'Yes' { Break }
         'No' {
             Write-Host ("{0}: Skipping user without performing changes" -f $user.DisplayName)
             # Add the current user to $userStatus with the status of Skipped. Add a specific Reason
