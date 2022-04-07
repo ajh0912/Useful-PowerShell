@@ -941,22 +941,26 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
         }
     }
     
-    if ($manager -and $azureAdUser.mySite) {
-        $choiceOneDriveParams = @{
-            Title   = "{0}: OneDrive Ownership" -f $user.DisplayName
-            Message = "Should manager '{0}' be granted OneDrive permission?" -f $manager.DisplayName
+    if ($manager) {
+        if ($azureAdUser.mySite) {
+            $choiceOneDriveParams = @{
+                Title   = "{0}: OneDrive Ownership" -f $user.DisplayName
+                Message = "Should manager '{0}' be granted OneDrive permission?" -f $manager.DisplayName
+            }
+            switch (Read-UserChoice @choiceOneDriveParams) {
+                'Yes' {
+                    [void]$actions.Add(
+                        @{ 'OneDriveManagerPermission' = $true }
+                    )
+                }
+                'No' { break }
+                'Terminate' {
+                    Break UserForeach
+                }
+            }
         }
-        
-        switch (Read-UserChoice @choiceOneDriveParams) {
-            'Yes' {
-                [void]$actions.Add(
-                    @{ 'OneDriveManagerPermission' = $true }
-                )
-            }
-            'No' { break }
-            'Terminate' {
-                Break UserForeach
-            }
+        else {
+            Write-Host ("{0}: User has no OneDrive provisioned" -f $user.DisplayName)
         }
         
         $choiceMailboxPermissionParams = @{
@@ -975,9 +979,6 @@ $azureAdGroups = Get-MgGroup -Filter 'onPremisesSyncEnabled ne true' -Consistenc
                 Break UserForeach
             }
         }
-    }
-    elseif ($manager -and (-not $azureAdUser.mySite)) {
-        Write-Host ("{0}: User has no OneDrive provisioned" -f $user.DisplayName)
     }
     
     $choiceMailHandlingParams = @{
