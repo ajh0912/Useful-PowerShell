@@ -17,7 +17,7 @@ Moves to 'Leavers - Shared Mailboxes' OU.
 After all users are processed, runs an Azure AD Connect sync and outputs the summary of users.
 
 Currently relies on group based licensing for removing existing licenses and assigning Exchange Online (Plan 2) if needed.
-Currently requires Exchange On-Premises, and assumes that all mailboxes are hosted in Exchange Online.
+Assumes that all mailboxes are hosted in Exchange Online, and works best with Exchange On-Premises.
 
 .PARAMETER LeaverOU
 Name or DistinguishedName of the Organizational Unit containing the users this script should process.
@@ -196,7 +196,7 @@ function Resolve-LicensePlan {
 
 function Get-RandomPassword {
     # Generate a 24 character password, possible characters: a-z, A-Z, 0-9, {]+-[*=@:)}$^%;(_!&#?>/|.
-    $charSet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{]+-[*=@:)}$^%;(_!&amp;#?>/|.'.ToCharArray()
+    $charSet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789{]+-[*=@:)}$^%;(_!&;#?>/|.'.ToCharArray()
     (1..24 | ForEach-Object { $charSet | Get-Random }) -join ''
 }
 
