@@ -16,25 +16,31 @@ If we did not suspend BitLocker, a BIOS/UEFI update may require the BitLocker re
 
 .PARAMETER autoReboot
 Dell Command Update will automatically invoke a computer restart if needed when this is set to $true.
+Value defaults to an environment variable of the same name, so most RMMs can set the variable.
 
 .PARAMETER biosPasswordNeeded
 If the computer has a BIOS/UEFI password, set this to true.
 You must provide the (encrypted) BIOS/UEFI password in the 'biosPwEncrypted' parameter.
+Value defaults to an environment variable of the same name, so most RMMs can set the variable.
 
 .PARAMETER biosPwEncrypted
 This is the (encrypted) BIOS/UEFI password for the computer.
 Must be provided if 'biosPasswordNeeded' parameter is true.
 For info on how to convert the plaintext password into an encrypted password see:
 https://www.dell.com/support/kbdoc/en-uk/000187573/bios-password-is-not-included-in-the-exported-configuration-of-dell-command-update
+Value defaults to an environment variable of the same name, so most RMMs can set the variable.
 
 .LINK
 https://www.dell.com/support/manuals/en-uk/command-update/dellcommandupdate_rg/dell-command-%7C-update-command-line-interface?guid=guid-c8d5aee8-5523-4d55-a421-1781d3da6f08&lang=en-us
 #>
-
+[CmdletBinding(DefaultParameterSetName = 'default')]
 param (
-    [Parameter()][bool]$autoReboot = $env:autoReboot,
-    [Parameter()][bool]$biosPasswordNeeded = $env:biosPasswordNeeded,
-    [Parameter()][string]$biosPwEncrypted = $env:biosPwEncrypted
+    [bool]$autoReboot = $env:autoReboot,
+    
+    [switch]$biosPasswordNeeded = $env:biosPasswordNeeded,
+    
+    [ValidateNotNullOrEmpty()]
+    [string]$biosPwEncrypted = $env:biosPwEncrypted
 )
 
 $dateTime = Get-Date -Format FileDateTimeUniversal
