@@ -4,11 +4,28 @@ Performs updates available from Dell Command Update. Drivers, firmware & BIOS/UE
 
 .DESCRIPTION
 Can be executed from an RMM that sets environment variables to pass information to the script.
-The values of the parameters will come from environment variables, unless the parameters are explicitly provided. 
+The values of the parameters will come from environment variables, unless the parameters are explicitly provided.
 Dell Command Update must already be present (installed via .exe, not via Microsoft Store / UWP).
 
 If a BIOS/UEFI password is present on the current computer, then $biosPasswordNeeded should be set to $true,
 and the (already encrypted) password should be provided in $biosPwEncrypted.
+
+Note that the computer must be in a trusted environment if a restart is required.
+BitLocker will be suspended automatically for the next reboot in order for a seamless end-user experience.
+If we did not suspend BitLocker, a BIOS/UEFI update may require the BitLocker recovery key to be entered.
+
+.PARAMETER autoReboot
+Dell Command Update will automatically invoke a computer restart if needed when this is set to $true.
+
+.PARAMETER biosPasswordNeeded
+If the computer has a BIOS/UEFI password, set this to true.
+You must provide the (encrypted) BIOS/UEFI password in the 'biosPwEncrypted' parameter.
+
+.PARAMETER biosPwEncrypted
+This is the (encrypted) BIOS/UEFI password for the computer.
+Must be provided if 'biosPasswordNeeded' parameter is true.
+For info on how to convert the plaintext password into an encrypted password see:
+https://www.dell.com/support/kbdoc/en-uk/000187573/bios-password-is-not-included-in-the-exported-configuration-of-dell-command-update
 
 .LINK
 https://www.dell.com/support/manuals/en-uk/command-update/dellcommandupdate_rg/dell-command-%7C-update-command-line-interface?guid=guid-c8d5aee8-5523-4d55-a421-1781d3da6f08&lang=en-us
