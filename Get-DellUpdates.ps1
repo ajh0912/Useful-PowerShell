@@ -12,15 +12,15 @@ Lists available updates on the standard output.
 Optionally stores the number of updates for each urgency into a user-defined field of the computer in Datto RMM / CentraStage.
 
 .PARAMETER storeToUDF
-If true, will convert the XML report into a string containing the number of updates for each urgency.
+If present/true, will convert the XML report into a string containing the number of updates for each urgency.
 It will then store this string into a user-defined field for the computer in Datto RMM / CentraStage.
 See https://rmm.datto.com/help/en/Content/4WEBPORTAL/Devices/UserDefinedFields.htm
 Stores into the user-defined field named in parameter 'customVariable'.
 
 .PARAMETER customVariable
-This is the name of the user-defined field used when parameter 'storeToUDF' is true.
+This is the name of the user-defined field used in parameter 'storeToUDF'.
 For example, 'Custom1', or 'Custom20'.
-Can only be used if parameter storeToUDF is true.
+Can only be used if parameter storeToUDF is present/true.
 
 .LINK
 https://www.dell.com/support/manuals/en-uk/command-update/dellcommandupdate_rg/dell-command-%7C-update-command-line-interface?guid=guid-c8d5aee8-5523-4d55-a421-1781d3da6f08&lang=en-us
@@ -28,7 +28,8 @@ https://www.dell.com/support/manuals/en-uk/command-update/dellcommandupdate_rg/d
 [CmdletBinding(DefaultParameterSetName = 'default')]
 param (
     [Parameter(ParameterSetName = 'UDF')]
-    [bool]$storeToUDF = $false,
+    [ValidateNotNullOrEmpty()]
+    [switch]$storeToUDF,
     
     [Parameter(ParameterSetName = 'UDF')]
     [ValidateNotNullOrEmpty()]
