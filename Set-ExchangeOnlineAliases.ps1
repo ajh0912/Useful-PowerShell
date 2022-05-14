@@ -16,6 +16,7 @@ If switch is present/true, then any existing 'smtp' (alias) email addresses will
 Any other values in the EmailAddresses field are preserved, Eg. SMTP (Primary), SIP, X500.
 #>
 
+[CmdletBinding(SupportsShouldProcess)]
 param (
     [ValidateScript({ Test-Path $_ })]
     [string]$CSVFile = 'Aliases.csv',
@@ -45,7 +46,7 @@ $csvContent = Import-Csv $CSVFile -ErrorAction Stop
         $mailbox = Get-EXOMailbox -Identity $item.Identity -ErrorAction Stop
     }
     catch {
-        Write-Error "$($item.Identity): Failed to get mailbox"
+        Write-Error $_
         Continue ItemLoop
     }
     # Find all current aliases in the EmailAddresses field (lowercase smtp), and remove the 'smtp:'
@@ -60,6 +61,7 @@ $csvContent = Import-Csv $CSVFile -ErrorAction Stop
     $params = @{
         Identity    = $item.Identity
         ErrorAction = 'Stop'
+        WhatIf      = $WhatIfPreference
     }
     
     if ($Overwrite) {
@@ -76,12 +78,12 @@ $csvContent = Import-Csv $CSVFile -ErrorAction Stop
         # Add to existing EmailAddress field
         $params.EmailAddress = @{Add = $futureAliasStrings }
     }
+
     try {
         Set-Mailbox @params
     }
     catch {
-        Write-Error "$($item.Identity): Set-Mailbox failed"
-        Write-Error $_.ErrorDetails
+        Write-Error $_
         Continue ItemLoop
     }
 }
