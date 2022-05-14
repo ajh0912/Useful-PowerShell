@@ -72,8 +72,11 @@ $csvContent = Import-Csv $CSVFile -ErrorAction Stop
     # Find all addresses in the EmailAddresses field that are not 'smtp:'
     $otherAddresses = ($mailbox.EmailAddresses -cmatch '(?<!smtp):.*')
     
+    # Split value from Aliases cell into multiple strings and remove whitespace
+    $futureAliases = $item.Aliases -split ',' -replace '\s+', ''
+
     # Convert CSV aliases (comma separated) into an object of smtp: emails
-    $futureAliasStrings = ($item.Aliases -split ',' -replace '\s+', '') | ForEach-Object { 'smtp:', $_ -join '' }
+    $futureAliasStrings = $futureAliases | ForEach-Object { 'smtp:', $_ -join '' }
     
     $params = @{
         Identity    = $item.Identity
@@ -84,8 +87,8 @@ $csvContent = Import-Csv $CSVFile -ErrorAction Stop
     if ($Overwrite) {
         # Check for any aliases not present in the CSV, but currently present in Exchange Online
         $currentAliases | ForEach-Object {
-            if ($_ -notin $item.Aliases) {
-                Write-Warning ("{0}: Alias {1} not present in CSV, will be removed from EXO" -f $item.Identity, $_)
+            if ($_ -notin $futureAliases) {
+                Write-Warning ("{0}: Alias {1} not present in CSV, will be removed from EXO" -f $mailbox.Name, $_)
             }
         }
         # Replace current EmailAddress field with all original SMTP (Primary), SIP, X500 etc values, plus new smtp (alias) values
