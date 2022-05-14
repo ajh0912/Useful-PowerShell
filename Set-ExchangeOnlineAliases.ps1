@@ -14,6 +14,23 @@ For multiple aliases, comma separate them in the same field/cell.
 .PARAMETER Overwrite
 If switch is present/true, then any existing 'smtp' (alias) email addresses will be replaced with the CSV contents.
 Any other values in the EmailAddresses field are preserved, Eg. SMTP (Primary), SIP, X500.
+
+.EXAMPLE
+.\Set-ExchangeOnlineAliases.ps1 -WhatIf
+
+An Exchange Online PowerShell session is already active
+What if: Setting mailbox Identity:"Example1@contoso.onmicrosoft.com".
+What if: Setting mailbox Identity:"Example2".
+What if: Setting mailbox Identity:"acd37fa8-d5d8-49b4-38f4-ba0af2a9139a".
+
+.EXAMPLE
+.\Set-ExchangeOnlineAliases.ps1 -CSVFile EXO_Aliases.csv -Overwrite
+
+An Exchange Online PowerShell session is already active
+WARNING: The command completed successfully but no settings of 'Example1' have been modified.
+WARNING: Example2: Alias Example2@contoso.onmicrosoft.com not present in CSV, will be removed from EXO
+WARNING: Example2: Alias Example2@contoso.mail.onmicrosoft.com not present in CSV, will be removed from EXO
+WARNING: acd37fa8-d5d8-49b4-38f4-ba0af2a9139a: Alias Example3@contoso.com not present in CSV, will be removed from EXO
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
