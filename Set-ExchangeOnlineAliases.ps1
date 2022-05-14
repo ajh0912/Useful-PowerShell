@@ -55,7 +55,7 @@ $csvContent = Import-Csv $CSVFile -ErrorAction Stop
     $otherAddresses = ($mailbox.EmailAddresses -cmatch '(?<!smtp):.*')
     
     # Convert CSV aliases (comma separated) into an object of smtp: emails
-    $futureAliasStrings = ($item.Aliases -split ', ') | ForEach-Object { 'smtp:', $_ -join '' }
+    $futureAliasStrings = ($item.Aliases -split ',' -replace '\s+', '') | ForEach-Object { 'smtp:', $_ -join '' }
     
     $params = @{
         Identity    = $item.Identity
